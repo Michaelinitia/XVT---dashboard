@@ -86,10 +86,19 @@
   .ticket-desc{font-size:14px;margin:10px 0 4px;color:var(--ink);}
   .ticket-loc{font-size:13px;color:var(--ink-soft);margin-bottom:10px;}
   .ticket-photo-link{display:block;margin-bottom:10px;}
-  .photo-gallery{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
-  .photo-gallery .ticket-photo-link{display:block;margin-bottom:0;flex:1 1 calc(50% - 4px);min-width:100px;}
-  .photo-gallery .ticket-photo{max-height:140px;width:100%;object-fit:cover;}
   .ticket-photo{max-width:100%;max-height:220px;border-radius:6px;border:1px solid var(--line);display:block;object-fit:cover;}
+  video.ticket-photo{width:100%;background:#000;}
+  .media-carousel{position:relative;margin-bottom:10px;border-radius:6px;overflow:hidden;background:#000;}
+  .media-carousel .carousel-slide{display:none;}
+  .media-carousel .carousel-slide.active{display:block;}
+  .media-carousel .ticket-photo-link{display:block;margin:0;}
+  .media-carousel .ticket-photo,.media-carousel video.ticket-photo{width:100%;max-height:260px;object-fit:contain;border:none;border-radius:0;background:#000;}
+  .carousel-btn{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);color:#fff;border:none;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .carousel-btn:hover{background:rgba(0,0,0,0.75);}
+  .carousel-prev{left:8px;} .carousel-next{right:8px;}
+  .carousel-dots{position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:6px;}
+  .carousel-dot{width:7px;height:7px;padding:0;border:none;border-radius:50%;background:rgba(255,255,255,0.5);cursor:pointer;}
+  .carousel-dot.active{background:#fff;}
   .claimed-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;
     color:var(--steel);margin-top:8px;}
   .resolved-label{color:var(--improve);}
@@ -206,6 +215,8 @@
   .history-bubble .ticket-photo-link{display:inline-block;width:48%;margin:0 3% 6px 0 !important;vertical-align:top;}
   .history-bubble .ticket-photo-link:nth-of-type(2n){margin-right:0 !important;}
   .history-bubble .ticket-photo{max-height:80px;object-fit:cover;}
+  .history-bubble .media-carousel .ticket-photo-link{display:block;width:100%;margin:0 !important;}
+  .history-bubble .media-carousel .ticket-photo,.history-bubble .media-carousel video.ticket-photo{max-height:140px;}
   .history-bubble .timeline{padding-left:16px;margin:6px 0 2px;}
   .history-bubble .timeline-item{padding-bottom:10px;}
   .history-bubble .timeline-item::before{width:7px;height:7px;left:-16px;top:2px;}
@@ -253,8 +264,8 @@
       <label for="s-description">Description</label>
       <textarea id="s-description" placeholder="Describe what's wrong"></textarea>
 
-      <label for="s-image">Photos (at least 1 required)</label>
-      <input type="file" id="s-image" accept="image/*" multiple />
+      <label for="s-image">Photos or video (at least 1 required, up to 3 files)</label>
+      <input type="file" id="s-image" accept="image/*,video/*" multiple />
 
       <div class="check-row">
         <label><input type="checkbox" id="s-newequip" /> Needs new equipment</label>
@@ -289,8 +300,8 @@
       <label for="i-description">Description</label>
       <textarea id="i-description" placeholder="Describe the improvement"></textarea>
 
-      <label for="i-image">Photos (at least 1 required)</label>
-      <input type="file" id="i-image" accept="image/*" multiple />
+      <label for="i-image">Photos or video (at least 1 required, up to 3 files)</label>
+      <input type="file" id="i-image" accept="image/*,video/*" multiple />
 
       <div class="check-row">
         <label><input type="checkbox" id="i-newequip" /> Needs new equipment</label>
@@ -665,6 +676,34 @@ function compressImage(file, maxDimension, quality){
   });
 }
 
+// Attachments cap: up to 3 files per task (photos and/or videos mixed).
+// Enforced at selection time (so a bad pick is rejected immediately,
+// before the user even gets to Submit) and re-checked right before
+// upload as a final guard.
+const MAX_ATTACHMENTS = 3;
+function validateAttachmentFiles(fileList){
+  const files = Array.from(fileList || []);
+  if(files.length > MAX_ATTACHMENTS){
+    return 'You can attach up to ' + MAX_ATTACHMENTS + ' files (photos or videos).';
+  }
+  const bad = files.find(f => !f.type || !(f.type.startsWith('image/') || f.type.startsWith('video/')));
+  if(bad) return 'Only photo or video files can be attached.';
+  return null;
+}
+
+// Rejects an over-the-cap or wrong-type selection the moment it's made,
+// clearing the input so the user isn't left thinking a bad pick went
+// through.
+function guardAttachmentInput(input){
+  input.addEventListener('change', () => {
+    const err = validateAttachmentFiles(input.files);
+    if(err){
+      alert(err);
+      input.value = '';
+    }
+  });
+}
+
 async function uploadRequestImage(file){
   const compressed = await compressImage(file, 1600, 0.8);
   const ext = compressed === file
@@ -695,6 +734,9 @@ async function uploadRequestImages(fileList){
   return urls;
 }
 
+guardAttachmentInput(document.getElementById('s-image'));
+guardAttachmentInput(document.getElementById('i-image'));
+
 document.getElementById('s-submit').addEventListener('click', async () => {
   const msg = document.getElementById('s-msg');
   msg.className = 'msg';
@@ -717,7 +759,13 @@ document.getElementById('s-submit').addEventListener('click', async () => {
     return;
   }
   if(!imageFiles || imageFiles.length === 0){
-    msg.textContent = 'Attach at least 1 photo before submitting.';
+    msg.textContent = 'Attach at least 1 photo or video before submitting.';
+    msg.className = 'msg err';
+    return;
+  }
+  const attachmentErr = validateAttachmentFiles(imageFiles);
+  if(attachmentErr){
+    msg.textContent = attachmentErr;
     msg.className = 'msg err';
     return;
   }
@@ -807,7 +855,13 @@ document.getElementById('i-submit').addEventListener('click', async () => {
     return;
   }
   if(!imageFiles || imageFiles.length === 0){
-    msg.textContent = 'Attach at least 1 photo before submitting.';
+    msg.textContent = 'Attach at least 1 photo or video before submitting.';
+    msg.className = 'msg err';
+    return;
+  }
+  const attachmentErr = validateAttachmentFiles(imageFiles);
+  if(attachmentErr){
+    msg.textContent = attachmentErr;
     msg.className = 'msg err';
     return;
   }
@@ -1155,8 +1209,8 @@ function renderTicket(r, mode){
   const isClaimant = !!(session && session.user && r.assigned_to === session.user.id);
   const resolveBtn = (r.status === 'in_progress' && isClaimant)
     ? '<span class="resolve-controls">' +
-        '<input type="file" accept="image/*" multiple data-resolve-photo="' + r.request_id + '" style="display:none;" />' +
-        '<button class="secondary" data-photo-trigger="' + r.request_id + '" title="Attach at least 1 resolution photo (required)" style="padding:6px 10px;">📷 Required</button>' +
+        '<input type="file" accept="image/*,video/*" multiple data-resolve-photo="' + r.request_id + '" style="display:none;" />' +
+        '<button class="secondary" data-photo-trigger="' + r.request_id + '" title="Attach at least 1 resolution photo or video (required, up to 3)" style="padding:6px 10px;">📷 Required</button>' +
         '<button class="secondary" data-resolve="' + r.request_id + '">Resolve</button>' +
       '</span>'
     : '';
@@ -1189,10 +1243,11 @@ function renderTicket(r, mode){
   const photoTrigger = el.querySelector('[data-photo-trigger]');
   if(photoTrigger && photoInput){
     photoTrigger.addEventListener('click', () => photoInput.click());
+    guardAttachmentInput(photoInput);
     photoInput.addEventListener('change', () => {
       const n = photoInput.files.length;
-      photoTrigger.textContent = n ? ('📷 ' + n + ' photo' + (n === 1 ? '' : 's')) : '📷 Required';
-      photoTrigger.title = n ? (n + ' photo' + (n === 1 ? '' : 's') + ' selected') : 'Attach at least 1 resolution photo (required)';
+      photoTrigger.textContent = n ? ('📷 ' + n + ' file' + (n === 1 ? '' : 's')) : '📷 Required';
+      photoTrigger.title = n ? (n + ' file' + (n === 1 ? '' : 's') + ' selected') : 'Attach at least 1 resolution photo or video (required, up to 3)';
     });
   }
   if(rbtn) rbtn.addEventListener('click', () => resolveRequest(r.request_id, photoInput ? photoInput.files : null));
@@ -1201,7 +1256,7 @@ function renderTicket(r, mode){
   // image link keep working exactly as before without also popping the
   // panel open underneath them.
   el.addEventListener('click', (e) => {
-    if(e.target.closest('button, a, input')) return;
+    if(e.target.closest('button, a, input, video')) return;
     openTicketDetail(r.request_id);
   });
   return el;
@@ -1213,24 +1268,73 @@ function escapeHtml(s){
   return d.innerHTML;
 }
 
-// Shared by ticketImage/resolutionImage: renders one or several photos
-// side-by-side. Always prefers the plural array column when present and
+function isVideoUrl(url){
+  return /\.(mp4|mov|webm|ogv|ogg|m4v|avi|mkv)(\?|#|$)/i.test(url);
+}
+
+// Renders one attachment — a video gets a native player, a photo keeps
+// the original click-to-open-full-size link.
+function mediaItem(url, altPrefix, index, total){
+  const safe = escapeHtml(url);
+  const label = altPrefix + ' ' + (isVideoUrl(url) ? 'video' : 'photo') + (total > 1 ? ' ' + (index + 1) : '');
+  if(isVideoUrl(url)){
+    return '<video src="' + safe + '" controls preload="metadata" class="ticket-photo" aria-label="' + label + '"></video>';
+  }
+  return '<a href="' + safe + '" target="_blank" rel="noopener" class="ticket-photo-link">' +
+    '<img src="' + safe + '" alt="' + label + '" class="ticket-photo" loading="lazy" />' +
+    '</a>';
+}
+
+// Shared by ticketImage/resolutionImage: renders one or several photos/
+// videos. Always prefers the plural array column when present and
 // non-empty; falls back to the singular legacy field for any ticket
-// created before multi-photo support existed, so old tickets still
-// display exactly as they always did.
+// created before multi-attachment support existed, so old tickets still
+// display exactly as they always did. 2+ attachments get wrapped in a
+// carousel (see the delegated click handler on .media-carousel) so they
+// can be cycled through one at a time instead of all stacking at once.
 function photoGallery(urls, altPrefix){
   if(!urls || !urls.length) return '';
-  const items = urls.map((url, i) => {
-    const safe = escapeHtml(url);
-    return '<a href="' + safe + '" target="_blank" rel="noopener" class="ticket-photo-link">' +
-      '<img src="' + safe + '" alt="' + altPrefix + ' photo' + (urls.length > 1 ? ' ' + (i + 1) : '') + '" class="ticket-photo" loading="lazy" />' +
-      '</a>';
-  }).join('');
-  // A single photo keeps the original full-width look untouched; 2+ get
-  // wrapped in a small flex gallery so they sit side by side instead of
-  // stacking full-width one after another.
-  return urls.length > 1 ? '<div class="photo-gallery">' + items + '</div>' : items;
+  if(urls.length === 1) return mediaItem(urls[0], altPrefix, 0, 1);
+
+  const slides = urls.map((url, i) =>
+    '<div class="carousel-slide' + (i === 0 ? ' active' : '') + '">' + mediaItem(url, altPrefix, i, urls.length) + '</div>'
+  ).join('');
+  const dots = urls.map((_, i) =>
+    '<button type="button" class="carousel-dot' + (i === 0 ? ' active' : '') + '" data-carousel-dot="' + i + '" aria-label="Go to item ' + (i + 1) + '"></button>'
+  ).join('');
+  return (
+    '<div class="media-carousel">' +
+      '<div class="carousel-track">' + slides + '</div>' +
+      '<button type="button" class="carousel-btn carousel-prev" data-carousel-prev aria-label="Previous">‹</button>' +
+      '<button type="button" class="carousel-btn carousel-next" data-carousel-next aria-label="Next">›</button>' +
+      '<div class="carousel-dots">' + dots + '</div>' +
+    '</div>'
+  );
 }
+
+// Delegated so a fresh listener never needs wiring after every re-render
+// (the detail panel, list cards, and Service History bubbles all inject
+// their markup via innerHTML). Reads the currently-active slide off the
+// clicked carousel, moves it, and re-renders both the slides and dots.
+document.addEventListener('click', (e) => {
+  const carousel = e.target.closest('.media-carousel');
+  if(!carousel) return;
+  const slides = carousel.querySelectorAll('.carousel-slide');
+  if(!slides.length) return;
+  let idx = Array.from(slides).findIndex(s => s.classList.contains('active'));
+  if(idx < 0) idx = 0;
+  if(e.target.closest('[data-carousel-prev]')){
+    idx = (idx - 1 + slides.length) % slides.length;
+  } else if(e.target.closest('[data-carousel-next]')){
+    idx = (idx + 1) % slides.length;
+  } else if(e.target.closest('[data-carousel-dot]')){
+    idx = parseInt(e.target.closest('[data-carousel-dot]').dataset.carouselDot, 10);
+  } else {
+    return;
+  }
+  slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+  carousel.querySelectorAll('.carousel-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
+});
 
 function ticketImage(r){
   const urls = (r.image_urls && r.image_urls.length) ? r.image_urls : (r.image_url ? [r.image_url] : []);
@@ -1662,7 +1766,12 @@ async function resolveRequest(request_id, resolutionImageFiles){
   // A resolution photo is now mandatory — at least 1 — same rule as
   // submission photos, so there's always visual proof of the fix.
   if(!resolutionImageFiles || resolutionImageFiles.length === 0){
-    alert('Attach at least 1 resolution photo before resolving.');
+    alert('Attach at least 1 resolution photo or video before resolving.');
+    return;
+  }
+  const attachmentErr = validateAttachmentFiles(resolutionImageFiles);
+  if(attachmentErr){
+    alert(attachmentErr);
     return;
   }
 
