@@ -9,13 +9,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Sans+3:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#F3F0E7; --card:#FBFAF6; --ink:#22201B; --ink-soft:#5B5749;
-    --steel:#46586A; --steel-dark:#2E3B47; --line:#D7D2C4;
-    --urgent:#B23A1F; --urgent-bg:#F6E3DC;
-    --high:#C6921B; --high-bg:#F7EBD2;
-    --medium:#46586A; --medium-bg:#E4E9EE;
-    --low:#4B6B4B; --low-bg:#E2EAE1;
-    --improve:#2E6B5E;
+    --paper:#F6F0EB; --card:#FDFAF8; --ink:#13233A; --ink-soft:#56637A;
+    --steel:#1E3A5F; --steel-dark:#0B1626; --line:#E3D6CD;
+    --rust:#B4532A; --rust-dark:#8F3E1C; --rust-bg:#F6E4DA;
+    --urgent:#B0222A; --urgent-bg:#F8E0E0;
+    --high:#C98A12; --high-bg:#F8EDD3;
+    --medium:#2F5582; --medium-bg:#E2E9F2;
+    --low:#3C7355; --low-bg:#E0EEE6;
+    --improve:#1E3A5F;
     --radius:10px;
   }
   /* MODU TRX shows "high" priority in red instead of the default amber —
@@ -30,24 +31,24 @@
   *{box-sizing:border-box;}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'Source Sans 3', sans-serif;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:960px;margin:0 auto;padding:40px 24px 80px;}
-  .masthead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:28px;}
+  .masthead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--ink);padding-bottom:16px;margin-bottom:28px;}
   .masthead-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
-  .masthead h1{font-family:'Oswald',sans-serif;font-weight:600;font-size:28px;letter-spacing:0.02em;margin:0;text-transform:uppercase;}
+  .masthead h1{color:var(--rust);font-family:'Oswald',sans-serif;font-weight:600;font-size:28px;letter-spacing:0.02em;margin:0;text-transform:uppercase;}
   .masthead .sub{font-size:13px;color:var(--ink-soft);margin-top:4px;}
   .tabs{display:flex;gap:2px;margin-bottom:24px;flex-wrap:wrap;}
   .tab{font-family:'Oswald',sans-serif;font-weight:500;font-size:14px;text-transform:uppercase;letter-spacing:0.03em;padding:12px 22px;background:var(--line);color:var(--ink-soft);border:none;cursor:pointer;border-radius:8px 8px 0 0;}
-  .tab.active{background:var(--ink);color:var(--paper);}
+  .tab.active{background:var(--rust);color:#fff;box-shadow:inset 0 -3px 0 var(--ink);}
   .panel{display:none;} .panel.active{display:block;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin-bottom:16px;}
   label{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:16px 0 6px;}
   label:first-child{margin-top:0;}
   input[type=text], input[type=email], input[type=password], select, textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;font-family:'Source Sans 3',sans-serif;font-size:14px;background:#fff;color:var(--ink);}
   textarea{min-height:80px;resize:vertical;}
-  input:focus, select:focus, textarea:focus{outline:2px solid var(--steel);outline-offset:1px;}
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--ink);outline-offset:1px;}
   .check-row{display:flex;gap:20px;margin-top:16px;}
   .check-row label{display:flex;align-items:center;gap:8px;text-transform:none;font-weight:400;font-size:14px;color:var(--ink);margin:0;letter-spacing:0;}
   .check-row input{width:auto;}
-  button.primary{margin-top:20px;background:var(--ink);color:var(--paper);border:none;padding:12px 24px;border-radius:6px;font-family:'Oswald',sans-serif;font-weight:500;font-size:14px;text-transform:uppercase;letter-spacing:0.03em;cursor:pointer;}
+  button.primary{margin-top:20px;background:var(--ink);color:#fff;border:none;padding:12px 24px;border-radius:6px;font-family:'Oswald',sans-serif;font-weight:500;font-size:14px;text-transform:uppercase;letter-spacing:0.03em;cursor:pointer;}
   button.primary:hover{background:var(--steel-dark);}
   button.primary:disabled{background:var(--line);color:var(--ink-soft);cursor:not-allowed;}
   button.secondary{background:transparent;color:var(--steel);border:1px solid var(--steel);padding:8px 16px;border-radius:6px;font-family:'Oswald',sans-serif;font-weight:500;font-size:13px;text-transform:uppercase;letter-spacing:0.03em;cursor:pointer;}
@@ -107,14 +108,17 @@
   .staff-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;}
   .staff-header .who{font-size:13px;color:var(--ink-soft);flex:1;min-width:0;}
   .staff-header #logout{flex-shrink:0;}
+  #staff-outlet-picker{align-items:center;gap:10px;flex-wrap:nowrap;white-space:nowrap;max-width:100%;}
+  #staff-outlet-picker .picker-label{font-family:'Oswald',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);flex-shrink:0;}
+  #staff-outlet-picker select{width:auto;min-width:0;max-width:320px;flex:1 1 auto;margin:0;padding:7px 10px;text-overflow:ellipsis;}
   .mobile-menu-toggle{display:none;background:#fff;border:1px solid var(--line);border-radius:8px;width:38px;height:38px;font-size:18px;cursor:pointer;color:var(--ink);flex-shrink:0;}
   .subtabs{display:flex;gap:8px;margin-bottom:18px;}
-  .subtabs button{background:#fff;border:1px solid var(--line);border-radius:20px;padding:6px 16px;font-size:12px;cursor:pointer;color:var(--ink-soft);font-family:'Source Sans 3',sans-serif;}
-  .subtabs button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .subtabs button{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 16px;font-size:12px;cursor:pointer;color:var(--ink-soft);font-family:'Source Sans 3',sans-serif;}
+  .subtabs button.active{background:var(--rust);color:#fff;border-color:var(--rust);}
   .staff-layout{display:flex;gap:24px;align-items:flex-start;}
   .sidebar-tabs{display:flex;flex-direction:column;gap:6px;min-width:170px;flex-shrink:0;position:sticky;top:24px;}
   .sidebar-tabs button{text-align:left;background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 16px;font-size:13px;font-family:'Oswald',sans-serif;font-weight:500;text-transform:uppercase;letter-spacing:0.03em;cursor:pointer;color:var(--ink-soft);}
-  .sidebar-tabs button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .sidebar-tabs button.active{background:var(--rust);color:#fff;border-color:var(--rust);box-shadow:inset 3px 0 0 var(--ink);}
   .staff-content{flex:1;min-width:0;}
   .sidebar-overlay{display:none;}
   @media (max-width:720px){
@@ -132,8 +136,18 @@
     .sidebar-overlay.open{display:block;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:999;}
   }
   .filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
-  .filters button{background:#fff;border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--ink-soft);font-family:'Source Sans 3',sans-serif;}
-  .filters button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .filters button{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--ink-soft);font-family:'Source Sans 3',sans-serif;}
+  .filters button.active{background:var(--rust);color:#fff;border-color:var(--rust);}
+  .queue-toolbar{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px 20px;border-bottom:1px solid var(--line);margin-bottom:18px;padding-bottom:0;}
+  .queue-toolbar #type-tabs{display:inline-flex;gap:2px;margin:0 0 10px;padding:3px;background:#fff;border:1px solid var(--line);border-radius:8px;}
+  .queue-toolbar #type-tabs button{border:none;border-radius:6px;padding:7px 18px;font-size:13px;font-weight:600;background:transparent;color:var(--ink-soft);}
+  .queue-toolbar #type-tabs button.active{background:var(--ink);color:#fff;}
+  .queue-toolbar #filters{margin:0;gap:18px;flex-wrap:wrap;}
+  .queue-toolbar #filters button{background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;padding:8px 2px 11px;margin-bottom:-1px;font-size:13px;text-transform:capitalize;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px;}
+  .queue-toolbar #filters button:hover{color:var(--ink);}
+  .queue-toolbar #filters button.active{background:transparent;color:var(--ink);font-weight:600;border-bottom-color:var(--rust);}
+  .queue-toolbar #filters .count{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink-soft);font-weight:400;}
+  .queue-toolbar #filters button.active .count{background:var(--rust-bg);border-color:var(--rust-bg);color:var(--rust-dark);}
   .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px;}
   .metric{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .metric .num{font-family:'Oswald',sans-serif;font-size:30px;font-weight:600;line-height:1;}
@@ -159,13 +173,13 @@
     font-family:'Oswald',sans-serif;font-weight:600;font-size:13px;cursor:pointer;
     border:3px solid #fff;
     box-shadow:0 3px 8px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25), inset 0 1px 1px rgba(255,255,255,0.4);
-    --pin-light:#5C6B78; --pin-dark:#2E3B47;
+    --pin-light:#D2764B; --pin-dark:#8F3E1C;
     transition:transform 0.12s ease;
   }
   .pin:hover{transform:translate(-50%,-50%) scale(1.08);}
-  .pin.zero{--pin-light:#E8E4D8; --pin-dark:var(--line); color:var(--ink-soft);}
-  .pin.urgent{--pin-light:#D9714F; --pin-dark:var(--urgent);}
-  .pin.high{--pin-light:#E0B24E; --pin-dark:var(--high);}
+  .pin.zero{--pin-light:#F1E9E3; --pin-dark:var(--line); color:var(--ink-soft);}
+  .pin.urgent{--pin-light:#D9545A; --pin-dark:var(--urgent);}
+  .pin.high{--pin-light:#E6AE45; --pin-dark:var(--high);}
   .zone-popover{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;}
   .zone-popover h3{font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;letter-spacing:0.03em;margin:0 0 12px;}
   .ticket{cursor:pointer;}
@@ -194,7 +208,7 @@
   .quick-comment-btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;color:var(--ink-soft);font-family:'Source Sans 3',sans-serif;margin:0 6px 6px 0;}
   .quick-comment-btn:hover{background:var(--line);}
   .history-outlet-heading{font-family:'Oswald',sans-serif;font-size:18px;text-transform:uppercase;letter-spacing:0.03em;
-    border-bottom:2px solid var(--ink);padding-bottom:8px;margin:28px 0 14px;}
+    border-bottom:2px solid var(--rust);padding-bottom:8px;margin:28px 0 14px;}
   .history-outlet-heading:first-child{margin-top:0;}
   .history-count{color:var(--ink-soft);font-weight:400;text-transform:none;letter-spacing:0;font-size:14px;}
 
@@ -328,10 +342,10 @@
       <div class="msg" id="l-msg"></div>
     </div>
 
-    <div id="staff-area" style="display:none;">
+    <div id="staff-area" style="display:none; position:relative;">
       <div class="staff-header">
-        <div class="who">Signed in as <strong id="who-email"></strong>
-          <span id="staff-outlet-picker" style="display:none;margin-left:12px;"> &middot; Outlet: <select id="staff-outlet-select"><option value="">Select outlet…</option></select></span>
+        <div class="who"><strong id="who-email" style="display:none;"></strong>
+          <span id="staff-outlet-picker" style="display:none;"><span class="picker-label">Outlet</span><select id="staff-outlet-select"><option value="">Select outlet…</option></select></span>
         </div>
       </div>
 
@@ -349,11 +363,13 @@
 
       <div class="staff-content">
       <div class="subpanel active" id="sub-queue">
-        <div class="subtabs" id="type-tabs">
-          <button class="active" data-type="defect">Defects</button>
-          <button data-type="improvement">Improvements</button>
+        <div class="queue-toolbar">
+          <div class="subtabs" id="type-tabs">
+            <button class="active" data-type="defect">Defects</button>
+            <button data-type="improvement">Improvements</button>
+          </div>
+          <div class="filters" id="filters"></div>
         </div>
-        <div class="filters" id="filters"></div>
         <div id="ticket-list"></div>
       </div>
 
@@ -1005,7 +1021,7 @@ document.getElementById('l-submit').addEventListener('click', async () => {
 // someone logged in from a link that wasn't tied to a specific outlet.
 async function initStaffOutletContext(){
   const pickerWrap = document.getElementById('staff-outlet-picker');
-  pickerWrap.style.display = 'inline';
+  pickerWrap.style.display = 'inline-flex';
   const res = await fetch(SUPABASE_URL + '/rest/v1/outlets?select=outlet_id,outlet_name&order=outlet_name.asc', {
     headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
   });
@@ -1072,9 +1088,15 @@ const FILTERS = ['all','pending','in_progress','resolved'];
 function renderFilters(){
   const wrap = document.getElementById('filters');
   wrap.innerHTML = '';
+  const typed = allStaffRequests.filter(r => (r.request_type || 'defect') === currentTypeFilter);
   FILTERS.forEach(f => {
     const b = document.createElement('button');
-    b.textContent = f === 'all' ? 'All' : f.replace('_',' ');
+    const n = f === 'all' ? typed.filter(r => r.status !== 'resolved').length : typed.filter(r => r.status === f).length;
+    const label = document.createElement('span');
+    label.textContent = f === 'all' ? 'All open' : f.replace('_',' ');
+    const c = document.createElement('span');
+    c.className = 'count'; c.textContent = n;
+    b.append(label, c);
     b.className = f === currentFilter ? 'active' : '';
     b.addEventListener('click', () => { currentFilter = f; renderFilters(); renderQueue(); });
     wrap.appendChild(b);
@@ -1663,7 +1685,7 @@ function renderTicketDetail(r, historyMode){
     '<div class="detail-section-label">Timeline</div>' +
     timelineHtml +
     (currentIsAdmin && r.status === 'resolved'
-      ? '<button class="secondary" data-reopen="' + r.request_id + '" style="margin-top:10px;color:#b81f1f;border-color:#b81f1f;">↩ Reopen task</button>'
+      ? '<button class="secondary" data-reopen="' + r.request_id + '" style="margin-top:10px;color:var(--urgent);border-color:var(--urgent);">↩ Reopen task</button>'
       : '') +
     commentsSectionHtml
   );
@@ -2123,7 +2145,7 @@ async function loadPermissionManageList(){
       '<label style="display:block;margin:4px 0;">Telegram username <input type="text" data-telegram style="width:180px;display:inline-block;margin-left:6px;" value="' + escapeHtml(p.telegram_username || '') + '" placeholder="no @" /></label>' +
       '<div class="check-row">' + checksHtml + '</div>' +
       '<button class="secondary" data-save-perm="' + p.user_id + '">Save</button>' +
-      (isSelf ? '' : ' <button class="secondary" data-delete-perm="' + p.user_id + '" style="color:#b81f1f;border-color:#b81f1f;">Delete</button>') +
+      (isSelf ? '' : ' <button class="secondary" data-delete-perm="' + p.user_id + '" style="color:var(--urgent);border-color:var(--urgent);">Delete</button>') +
       '<span class="msg" style="display:inline-block;margin-left:8px;"></span>';
     list.appendChild(row);
     row.querySelector('[data-save-perm]').addEventListener('click', async () => {
@@ -2190,7 +2212,7 @@ async function loadPermissionManageList(){
 }
 
 function labelColor(label){
-  const palette = ['#46586A', '#B23A1F', '#C6921B', '#4B6B4B', '#2E6B5E', '#7C4B6B', '#2E3B47'];
+  const palette = ['#B4532A', '#1E3A5F', '#C98A12', '#3C7355', '#2F5582', '#8F3E1C', '#13233A'];
   let hash = 0;
   for(let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash);
   return palette[Math.abs(hash) % palette.length];
