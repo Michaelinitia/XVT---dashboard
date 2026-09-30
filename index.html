@@ -237,6 +237,79 @@
   .history-bubble .timeline-item::after{left:-13px;top:12px;}
   .history-bubble .tl-title{font-size:10.5px;}
   .history-bubble .tl-meta{font-size:9.5px;}
+
+  /* Weekly Report: an on-screen preview of exactly what goes into the PDF.
+     #report-doc is the single element that gets exported, so everything
+     inside it is styled to read as a plain printed document (white page,
+     tables, no interactive controls) rather than as dashboard cards. */
+  .report-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-bottom:16px;}
+  .report-controls .week-nav{display:inline-flex;align-items:center;gap:6px;}
+  .report-controls .week-nav button{background:#fff;border:1px solid var(--line);border-radius:6px;width:34px;height:34px;font-size:16px;cursor:pointer;color:var(--ink);}
+  .report-controls .week-nav button:disabled{opacity:0.4;cursor:not-allowed;}
+  .report-controls input[type=date], .report-controls select{width:auto;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink);}
+  .report-controls .inline-check{display:inline-flex;align-items:center;gap:6px;margin:0;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px;color:var(--ink);}
+  .report-controls .inline-check input{width:auto;}
+  .report-controls button.primary{margin-top:0;margin-left:auto;}
+  #report-doc{background:#fff;color:#13233A;border:1px solid var(--line);border-radius:var(--radius);padding:32px 34px;font-size:12.5px;line-height:1.45;}
+  #report-doc .rp-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;border-bottom:3px solid var(--ink);padding-bottom:12px;margin-bottom:18px;}
+  #report-doc .rp-brand{font-family:'Oswald',sans-serif;font-weight:600;font-size:22px;color:var(--rust);text-transform:uppercase;letter-spacing:0.02em;line-height:1;}
+  #report-doc .rp-title{font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;letter-spacing:0.04em;margin-top:6px;}
+  #report-doc .rp-meta{text-align:right;font-size:11.5px;color:var(--ink-soft);}
+  #report-doc .rp-meta strong{color:var(--ink);font-size:13px;}
+  #report-doc h2{font-family:'Oswald',sans-serif;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin:24px 0 10px;padding-bottom:5px;border-bottom:2px solid var(--rust);}
+  #report-doc .rp-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+  #report-doc .rp-metric{border:1px solid var(--line);border-radius:6px;padding:10px 12px;}
+  #report-doc .rp-metric .num{font-family:'Oswald',sans-serif;font-size:24px;font-weight:600;line-height:1;}
+  #report-doc .rp-metric .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin-top:4px;}
+  #report-doc .rp-metric.urgent .num{color:var(--urgent);}
+  #report-doc .rp-metric.low .num{color:var(--low);}
+  #report-doc .rp-metric.rust .num{color:var(--rust);}
+  #report-doc table{width:100%;border-collapse:collapse;font-size:12px;}
+  #report-doc th{text-align:left;font-family:'Oswald',sans-serif;font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);border-bottom:1px solid var(--ink);padding:5px 8px;}
+  #report-doc td{border-bottom:1px solid var(--line);padding:5px 8px;vertical-align:top;}
+  #report-doc td.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
+  #report-doc .rp-two{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  #report-doc .rp-ticket{border:1px solid var(--line);border-left:5px solid var(--medium);border-radius:6px;padding:12px 14px;margin-bottom:10px;page-break-inside:avoid;break-inside:avoid;}
+  #report-doc .rp-ticket.urgent{border-left-color:var(--urgent);}
+  #report-doc .rp-ticket.high{border-left-color:var(--high);}
+  #report-doc .rp-ticket.low{border-left-color:var(--low);}
+  #report-doc .rp-ticket-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+  #report-doc .rp-ticket-top .badge{font-size:9.5px;padding:2px 7px;}
+  #report-doc .rp-type{font-family:'Oswald',sans-serif;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-right:6px;}
+  #report-doc .rp-id{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);}
+  #report-doc .rp-desc{font-size:13.5px;margin:7px 0 3px;}
+  #report-doc .rp-sub{font-size:11.5px;color:var(--ink-soft);}
+  #report-doc .rp-flags{margin-top:4px;}
+  #report-doc .rp-flag{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--steel);border:1px solid var(--line);border-radius:3px;padding:1px 6px;margin:0 4px 3px 0;}
+  #report-doc .rp-flag.hazard{color:var(--urgent);border-color:var(--urgent-bg);background:var(--urgent-bg);}
+  #report-doc .rp-body{display:flex;gap:14px;margin-top:8px;}
+  #report-doc .rp-body .rp-main{flex:1;min-width:0;}
+  #report-doc .rp-photos{display:flex;gap:6px;flex-shrink:0;}
+  #report-doc .rp-photos figure{margin:0;width:92px;}
+  #report-doc .rp-photos img{width:92px;height:70px;object-fit:cover;border-radius:4px;border:1px solid var(--line);display:block;}
+  #report-doc .rp-photos figcaption{font-size:9px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin-top:2px;}
+  #report-doc .rp-actions-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);margin:9px 0 3px;}
+  #report-doc .rp-actions td{font-size:11.5px;padding:3px 6px;}
+  #report-doc .rp-actions td.when{white-space:nowrap;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;font-size:10.5px;width:1%;}
+  #report-doc .rp-actions td.who{white-space:nowrap;font-weight:600;width:1%;}
+  #report-doc .rp-actions tr.key td.what{font-weight:600;color:var(--rust-dark);}
+  #report-doc .rp-none{font-size:11.5px;color:var(--ink-soft);font-style:italic;}
+  #report-doc .rp-foot{margin-top:26px;padding-top:8px;border-top:1px solid var(--line);font-size:10.5px;color:var(--ink-soft);display:flex;justify-content:space-between;}
+  @media (max-width:720px){
+    #report-doc:not(.rp-export){padding:18px 16px;}
+    #report-doc:not(.rp-export) .rp-metrics{grid-template-columns:repeat(2,1fr);}
+    #report-doc:not(.rp-export) .rp-two{grid-template-columns:1fr;}
+    #report-doc:not(.rp-export) .rp-body{flex-direction:column;}
+    .report-controls button.primary{margin-left:0;}
+  }
+  /* Fallback path (only used if the PDF library can't load): the browser's
+     own Print → Save as PDF, with everything but the report hidden. */
+  @media print{
+    body.printing-report *{visibility:hidden !important;}
+    body.printing-report #report-doc, body.printing-report #report-doc *{visibility:visible !important;}
+    body.printing-report #report-doc{position:absolute;left:0;top:0;width:100%;border:none;padding:0;}
+    body.printing-report{background:#fff;}
+  }
 </style>
 </head>
 <body>
@@ -354,6 +427,7 @@
       <div class="sidebar-tabs" id="main-subtabs">
         <button class="active" data-sub="queue">Queue</button>
         <button data-sub="dashboard">Dashboard</button>
+        <button data-sub="report">Weekly Report</button>
         <button data-sub="mytasks">My Tasks</button>
         <button data-sub="map">Outlet map</button>
         <button data-sub="team">Team</button>
@@ -382,6 +456,21 @@
         <div id="dash-outlet-filter" style="margin-bottom:16px;"></div>
         <div class="metrics" id="metrics"></div>
         <div class="breakdown" id="breakdown"></div>
+      </div>
+
+      <div class="subpanel" id="sub-report" style="display:none;">
+        <div class="report-controls">
+          <span class="week-nav">
+            <button id="report-prev" aria-label="Previous week" title="Previous week">‹</button>
+            <input type="date" id="report-date" title="Any day in the week to report on" />
+            <button id="report-next" aria-label="Next week" title="Next week">›</button>
+          </span>
+          <span id="report-outlet-filter"></span>
+          <label class="inline-check"><input type="checkbox" id="report-photos" checked /> Include photos</label>
+          <button class="primary" id="report-pdf">Generate PDF</button>
+        </div>
+        <div class="msg" id="report-msg"></div>
+        <div id="report-doc"><div class="empty">Loading report…</div></div>
       </div>
 
       <div class="subpanel" id="sub-mytasks" style="display:none;">
@@ -566,10 +655,11 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
 document.querySelectorAll('#main-subtabs button').forEach(b => {
   b.addEventListener('click', () => {
     document.querySelectorAll('#main-subtabs button').forEach(x => x.classList.toggle('active', x === b));
-    ['queue','dashboard','mytasks','map','team','settings','history'].forEach(name => {
+    ['queue','dashboard','report','mytasks','map','team','settings','history'].forEach(name => {
       document.getElementById('sub-' + name).style.display = (name === b.dataset.sub) ? 'block' : 'none';
     });
     if(b.dataset.sub === 'dashboard') openDashboard();
+    if(b.dataset.sub === 'report') openWeeklyReport();
     if(b.dataset.sub === 'mytasks') renderMyTasks();
     if(b.dataset.sub === 'map') renderMap();
     if(b.dataset.sub === 'team') renderTeam();
@@ -1044,6 +1134,7 @@ async function initStaffOutletContext(){
     renderQueue();
     if(document.getElementById('sub-map').style.display !== 'none') renderMap();
     if(document.getElementById('sub-dashboard').style.display !== 'none') openDashboard();
+    if(document.getElementById('sub-report').style.display !== 'none') openWeeklyReport();
   });
 }
 
@@ -1916,6 +2007,439 @@ function breakdownBlock(title, counts, total, colorFn){
   }).join('');
   return '<h3>' + title + '</h3>' + rows;
 }
+
+// ---------------------------------------------------------------------
+// Weekly Report — a printable summary of one Mon–Sun week: every issue
+// reported that week, plus every action staff took during it (claims,
+// resolutions, and the "Report progress" quick buttons like "Contractor
+// contacted", ETA dates, and free-text updates). Built entirely from data
+// the dashboard already reads — requests for claim/resolve times, and
+// request_comments for everything staff post — so there's no new table
+// or column behind it. "Generate PDF" exports exactly the #report-doc
+// preview shown on screen.
+// ---------------------------------------------------------------------
+let reportWeekStart = startOfWeek(new Date());
+let reportOutletFilter = 'current';
+let reportRenderToken = 0;
+let reportFileName = 'XVT-weekly-report.pdf';
+
+// Buckets used both for the "Actions taken" tally and to highlight the
+// key progress steps in each ticket's action log. The first three match
+// the quick-comment buttons in renderTicketDetail() word for word; ETA
+// and reopen comments are recognised by the fixed text those two
+// features post.
+const REPORT_ACTION_TYPES = [
+  'Claimed',
+  'Contractor contacted',
+  'Maintenance team contacted',
+  'Ordered, pending item arrival',
+  'Completion date set',
+  'Resolved',
+  'Reopened',
+  'Other update'
+];
+
+function classifyComment(text){
+  const t = (text || '').trim();
+  if(t === 'Contractor contacted') return 'Contractor contacted';
+  if(t === 'Maintenance team contacted') return 'Maintenance team contacted';
+  if(t === 'Ordered, pending item arrival') return 'Ordered, pending item arrival';
+  if(t.startsWith('Will be completed by')) return 'Completion date set';
+  if(t.startsWith('🔄 Reopened')) return 'Reopened';
+  return 'Other update';
+}
+
+// Weeks run Monday 00:00 to the following Monday 00:00, in the viewer's
+// local time — the same clock every other date on the dashboard uses.
+function startOfWeek(d){
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+
+function addDays(d, n){
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+// Local YYYY-MM-DD (toISOString() would shift to UTC and can land on
+// the wrong day for anyone east of Greenwich).
+function localDateStr(d){
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function inRange(iso, start, end){
+  if(!iso) return false;
+  const t = new Date(iso).getTime();
+  return t >= start.getTime() && t < end.getTime();
+}
+
+function renderReportOutletFilter(){
+  const el = document.getElementById('report-outlet-filter');
+  if(!currentIsAdmin){
+    el.innerHTML = '';
+    return;
+  }
+  const options = ['<option value="current"' + (reportOutletFilter === 'current' ? ' selected' : '') + '>This outlet</option>',
+    '<option value="all"' + (reportOutletFilter === 'all' ? ' selected' : '') + '>All outlets</option>']
+    .concat(outletsList.map(o => '<option value="' + o.outlet_id + '"' + (reportOutletFilter === o.outlet_id ? ' selected' : '') + '>' + escapeHtml(o.outlet_name) + '</option>'));
+  el.innerHTML = '<select id="report-outlet-select" aria-label="Outlet">' + options.join('') + '</select>';
+  document.getElementById('report-outlet-select').addEventListener('change', (e) => {
+    reportOutletFilter = e.target.value;
+    renderWeeklyReport();
+  });
+}
+
+async function openWeeklyReport(){
+  // Admins get a fresh cross-outlet pull every time so the report reflects
+  // claims/resolves made since the Dashboard or History tab last loaded it.
+  if(currentIsAdmin) await loadAdminOutletsData();
+  renderReportOutletFilter();
+  renderWeeklyReport();
+}
+
+function setReportWeek(d){
+  reportWeekStart = startOfWeek(d);
+  renderWeeklyReport();
+}
+
+document.getElementById('report-prev').addEventListener('click', () => setReportWeek(addDays(reportWeekStart, -7)));
+document.getElementById('report-next').addEventListener('click', () => setReportWeek(addDays(reportWeekStart, 7)));
+document.getElementById('report-date').addEventListener('change', (e) => {
+  if(e.target.value) setReportWeek(new Date(e.target.value + 'T00:00:00'));
+});
+document.getElementById('report-photos').addEventListener('change', () => renderWeeklyReport());
+document.getElementById('report-pdf').addEventListener('click', generateReportPdf);
+
+function reportScope(){
+  const nameById = {};
+  outletsList.forEach(o => { nameById[o.outlet_id] = o.outlet_name; });
+  if(currentIsAdmin && reportOutletFilter !== 'current'){
+    const pool = adminAllRequests || [];
+    if(reportOutletFilter === 'all') return { requests: pool, label: 'All outlets', multi: true, nameById };
+    return {
+      requests: pool.filter(r => r.outlet_id === reportOutletFilter),
+      label: nameById[reportOutletFilter] || 'Outlet',
+      multi: false, nameById
+    };
+  }
+  return { requests: allStaffRequests, label: outletName || '', multi: false, nameById, needsOutlet: !outletId };
+}
+
+async function renderWeeklyReport(){
+  const token = ++reportRenderToken;
+  const doc = document.getElementById('report-doc');
+  const msg = document.getElementById('report-msg');
+  msg.className = 'msg';
+  const weekStart = reportWeekStart;
+  const weekEnd = addDays(weekStart, 7);
+  const thisWeek = startOfWeek(new Date());
+
+  document.getElementById('report-date').value = localDateStr(weekStart);
+  document.getElementById('report-next').disabled = weekStart.getTime() >= thisWeek.getTime();
+
+  const scope = reportScope();
+  if(scope.needsOutlet){
+    doc.innerHTML = '<div class="empty">No outlet selected. Pick your outlet above to build its report.</div>';
+    document.getElementById('report-pdf').disabled = true;
+    return;
+  }
+  document.getElementById('report-pdf').disabled = false;
+  doc.innerHTML = '<div class="empty">Loading report…</div>';
+
+  // Every comment posted during the week, across whatever this account
+  // can read — then narrowed client-side to the tickets in scope. Cheaper
+  // and simpler than an id=in.(…) list, which can get very long for the
+  // all-outlets view.
+  let comments = [];
+  let commentsFailed = false;
+  try{
+    const res = await fetch(
+      SUPABASE_URL + '/rest/v1/request_comments?select=request_id,comment_text,created_at,profiles(full_name)' +
+        '&created_at=gte.' + encodeURIComponent(weekStart.toISOString()) +
+        '&created_at=lt.' + encodeURIComponent(weekEnd.toISOString()) +
+        '&order=created_at.asc',
+      { headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token } }
+    );
+    if(res.ok) comments = await res.json();
+    else commentsFailed = true;
+  } catch(e){ commentsFailed = true; }
+  if(token !== reportRenderToken) return; // a newer week/outlet was picked meanwhile
+
+  if(commentsFailed){
+    msg.textContent = 'Could not load staff comments for this week — the report below only shows claims and resolutions.';
+    msg.className = 'msg err';
+  }
+
+  const byId = {};
+  scope.requests.forEach(r => { byId[r.request_id] = r; });
+
+  // Build one chronological action log per ticket for the week.
+  const eventsById = {};
+  const pushEvent = (id, ev) => { (eventsById[id] = eventsById[id] || []).push(ev); };
+  scope.requests.forEach(r => {
+    const claimant = (r.profiles && r.profiles.full_name) || 'Staff';
+    if(inRange(r.claimed_at, weekStart, weekEnd)){
+      pushEvent(r.request_id, { at: r.claimed_at, who: claimant, type: 'Claimed', text: 'Claimed the task' });
+    }
+    if(r.status === 'resolved' && inRange(r.resolved_at, weekStart, weekEnd)){
+      pushEvent(r.request_id, { at: r.resolved_at, who: claimant, type: 'Resolved', text: 'Marked as resolved' });
+    }
+  });
+  comments.forEach(c => {
+    if(!byId[c.request_id]) return;
+    pushEvent(c.request_id, {
+      at: c.created_at,
+      who: (c.profiles && c.profiles.full_name) || 'Staff',
+      type: classifyComment(c.comment_text),
+      text: c.comment_text
+    });
+  });
+  Object.values(eventsById).forEach(list => list.sort((a, b) => new Date(a.at) - new Date(b.at)));
+
+  const byUrgencyThenDate = (a, b) =>
+    (URGENCY_RANK[a.urgency] ?? 9) - (URGENCY_RANK[b.urgency] ?? 9) ||
+    new Date(a.submitted_at) - new Date(b.submitted_at);
+  const reported = scope.requests.filter(r => inRange(r.submitted_at, weekStart, weekEnd)).sort(byUrgencyThenDate);
+  const reportedIds = new Set(reported.map(r => r.request_id));
+  const followUps = scope.requests
+    .filter(r => !reportedIds.has(r.request_id) && eventsById[r.request_id])
+    .sort(byUrgencyThenDate);
+
+  const allEvents = [].concat(...Object.values(eventsById));
+  const actionCounts = {};
+  REPORT_ACTION_TYPES.forEach(t => { actionCounts[t] = 0; });
+  allEvents.forEach(e => { actionCounts[e.type] = (actionCounts[e.type] || 0) + 1; });
+
+  const staff = {};
+  allEvents.forEach(e => {
+    const s = staff[e.who] = staff[e.who] || { claimed: 0, contractor: 0, resolved: 0, total: 0 };
+    s.total++;
+    if(e.type === 'Claimed') s.claimed++;
+    if(e.type === 'Resolved') s.resolved++;
+    if(e.type === 'Contractor contacted') s.contractor++;
+  });
+
+  const defects = reported.filter(r => (r.request_type || 'defect') === 'defect').length;
+  const stillOpen = reported.filter(r => r.status !== 'resolved' && r.status !== 'closed').length;
+  const urgentReported = reported.filter(r => r.urgency === 'urgent').length;
+
+  const weekLabel =
+    weekStart.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) + ' – ' +
+    addDays(weekStart, 6).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const generatedAt = new Date().toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const includePhotos = document.getElementById('report-photos').checked;
+  reportFileName = 'XVT-weekly-report_' + (scope.label || 'outlet').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') + '_' + localDateStr(weekStart) + '.pdf';
+
+  const rpMetric = (num, lbl, cls) => '<div class="rp-metric ' + (cls || '') + '"><div class="num">' + num + '</div><div class="lbl">' + lbl + '</div></div>';
+
+  const actionRows = REPORT_ACTION_TYPES
+    .filter(t => actionCounts[t])
+    .map(t => '<tr><td>' + escapeHtml(t) + '</td><td class="num">' + actionCounts[t] + '</td></tr>').join('');
+  const staffRows = Object.keys(staff).sort((a, b) => staff[b].total - staff[a].total || a.localeCompare(b))
+    .map(name => {
+      const s = staff[name];
+      return '<tr><td>' + escapeHtml(name) + '</td><td class="num">' + s.claimed + '</td><td class="num">' + s.contractor +
+        '</td><td class="num">' + s.resolved + '</td><td class="num">' + s.total + '</td></tr>';
+    }).join('');
+
+  doc.innerHTML =
+    '<div class="rp-head">' +
+      '<div><div class="rp-brand">XVT</div><div class="rp-title">Weekly Maintenance Report</div></div>' +
+      '<div class="rp-meta"><strong>' + escapeHtml(scope.label) + '</strong><br>' + escapeHtml(weekLabel) + '</div>' +
+    '</div>' +
+
+    '<div class="rp-metrics">' +
+      rpMetric(reported.length, 'Issues reported<br>' + defects + ' defect' + (defects === 1 ? '' : 's') + ' · ' + (reported.length - defects) + ' improvement' + (reported.length - defects === 1 ? '' : 's')) +
+      rpMetric(urgentReported, 'Urgent reported', urgentReported ? 'urgent' : '') +
+      rpMetric(actionCounts['Resolved'], 'Resolved this week', 'low') +
+      rpMetric(stillOpen, 'New issues still open', stillOpen ? 'urgent' : '') +
+      rpMetric(actionCounts['Contractor contacted'], 'Contractor contacted', 'rust') +
+    '</div>' +
+
+    '<div class="rp-two">' +
+      '<div><h2>Actions taken by staff</h2>' +
+        (actionRows
+          ? '<table><thead><tr><th>Action</th><th style="text-align:right;">Count</th></tr></thead><tbody>' + actionRows +
+            '<tr><td><strong>Total</strong></td><td class="num"><strong>' + allEvents.length + '</strong></td></tr></tbody></table>'
+          : '<div class="rp-none">No staff actions logged this week.</div>') +
+      '</div>' +
+      '<div><h2>Staff activity</h2>' +
+        (staffRows
+          ? '<table><thead><tr><th>Staff</th><th style="text-align:right;">Claimed</th><th style="text-align:right;">Contractor</th><th style="text-align:right;">Resolved</th><th style="text-align:right;">Total</th></tr></thead><tbody>' + staffRows + '</tbody></table>'
+          : '<div class="rp-none">No staff activity this week.</div>') +
+      '</div>' +
+    '</div>' +
+
+    '<h2>Issues reported this week (' + reported.length + ')</h2>' +
+    (reported.length
+      ? reported.map(r => reportTicket(r, eventsById[r.request_id], scope, includePhotos)).join('')
+      : '<div class="rp-none">No issues were reported this week.</div>') +
+
+    (followUps.length
+      ? '<h2>Follow-up on earlier issues (' + followUps.length + ')</h2>' +
+        followUps.map(r => reportTicket(r, eventsById[r.request_id], scope, includePhotos)).join('')
+      : '') +
+
+    '<div class="rp-foot"><span>Generated ' + escapeHtml(generatedAt) + (session && session.user ? ' by ' + escapeHtml(session.user.email) : '') + '</span>' +
+      '<span>Statuses shown are as of generation time.</span></div>';
+
+  doc.querySelectorAll('.rp-photos img').forEach(img => {
+    img.addEventListener('error', () => { const f = img.closest('figure'); if(f) f.remove(); });
+  });
+}
+
+function firstImageUrl(urls){
+  return (urls || []).find(u => u && !isVideoUrl(u)) || null;
+}
+
+function reportTicket(r, events, scope, includePhotos){
+  const isImprovement = r.request_type === 'improvement';
+  const claimant = (r.profiles && r.profiles.full_name) || '';
+  const fmt = (iso, withTime) => new Date(iso).toLocaleString(undefined, withTime
+    ? { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }
+    : { day: 'numeric', month: 'short', year: 'numeric' });
+  const nature = (r.nature_of_defect || r.nature_of_improvement || '').replace(/_/g, ' ');
+
+  const flags = [];
+  if(r.requires_new_equipment) flags.push('<span class="rp-flag">Needs new equipment</span>');
+  if(r.requires_new_facilities) flags.push('<span class="rp-flag">Needs new facilities</span>');
+  if(r.requires_external_contractor) flags.push('<span class="rp-flag">Needs external contractor</span>');
+
+  const progress = [
+    'Reported ' + fmt(r.submitted_at, true),
+    r.claimed_at ? 'Claimed' + (claimant ? ' by ' + claimant : '') + ' ' + fmt(r.claimed_at, true) : 'Not yet claimed',
+    r.status === 'resolved' && r.resolved_at ? 'Resolved ' + fmt(r.resolved_at, true)
+      : (r.eta_date ? 'Target completion ' + fmt(r.eta_date + 'T00:00:00', false) : 'Not yet resolved')
+  ];
+
+  let photos = '';
+  if(includePhotos){
+    const before = firstImageUrl((r.image_urls && r.image_urls.length) ? r.image_urls : [r.image_url]);
+    const after = firstImageUrl((r.resolution_image_urls && r.resolution_image_urls.length) ? r.resolution_image_urls : [r.resolution_image_url]);
+    const fig = (url, cap) => '<figure><img src="' + escapeHtml(url) + '" crossorigin="anonymous" alt="' + cap + ' photo" /><figcaption>' + cap + '</figcaption></figure>';
+    if(before || after) photos = '<div class="rp-photos">' + (before ? fig(before, 'Reported') : '') + (after ? fig(after, 'Resolved') : '') + '</div>';
+  }
+
+  const KEY_TYPES = ['Claimed', 'Contractor contacted', 'Maintenance team contacted', 'Ordered, pending item arrival', 'Completion date set', 'Resolved', 'Reopened'];
+  const actionsHtml = (events && events.length)
+    ? '<table class="rp-actions"><tbody>' + events.map(e =>
+        '<tr class="' + (KEY_TYPES.includes(e.type) ? 'key' : '') + '">' +
+          '<td class="when">' + escapeHtml(fmt(e.at, true)) + '</td>' +
+          '<td class="who">' + escapeHtml(e.who) + '</td>' +
+          '<td class="what">' + escapeHtml(e.text) + '</td>' +
+        '</tr>').join('') + '</tbody></table>'
+    : '<div class="rp-none">No staff action recorded this week.</div>';
+
+  return (
+    '<div class="rp-ticket ' + escapeHtml(r.urgency || '') + '">' +
+      '<div class="rp-ticket-top"><div>' +
+        '<span class="rp-type" style="color:' + (isImprovement ? 'var(--improve)' : 'var(--ink)') + ';">' + (isImprovement ? 'Improvement' : 'Defect') + '</span>' +
+        '<span class="badge ' + escapeHtml(r.urgency || '') + '">' + escapeHtml(r.urgency || '') + '</span> ' +
+        '<span class="badge ' + escapeHtml(r.status || '') + '">' + escapeHtml((r.status || '').replace('_', ' ')) + '</span>' +
+      '</div><span class="rp-id">#' + escapeHtml(r.request_id.slice(0, 8)) + '</span></div>' +
+      '<div class="rp-body"><div class="rp-main">' +
+        '<div class="rp-desc">' + escapeHtml(r.description) + '</div>' +
+        '<div class="rp-sub">' +
+          (scope.multi ? escapeHtml(scope.nameById[r.outlet_id] || 'Unknown outlet') + ' &middot; ' : '') +
+          escapeHtml(r.location_within_outlet) + (nature ? ' &middot; ' + escapeHtml(nature) : '') +
+        '</div>' +
+        (flags.length ? '<div class="rp-flags">' + flags.join('') + '</div>' : '') +
+        '<div class="rp-sub" style="margin-top:4px;">' + progress.map(escapeHtml).join(' &nbsp;→&nbsp; ') + '</div>' +
+      '</div>' + photos + '</div>' +
+      '<div class="rp-actions-label">Actions this week</div>' +
+      actionsHtml +
+    '</div>'
+  );
+}
+
+// html2pdf (html2canvas + jsPDF) is only fetched the first time someone
+// actually exports, so it adds nothing to normal page loads.
+let html2pdfPromise = null;
+function loadHtml2Pdf(){
+  if(window.html2pdf) return Promise.resolve();
+  if(!html2pdfPromise){
+    html2pdfPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      s.onload = () => resolve();
+      s.onerror = () => { html2pdfPromise = null; reject(new Error('Could not load PDF library')); };
+      document.head.appendChild(s);
+    });
+  }
+  return html2pdfPromise;
+}
+
+function printReportFallback(){
+  const prevTitle = document.title;
+  document.title = reportFileName.replace(/\.pdf$/, '');
+  document.body.classList.add('printing-report');
+  const cleanup = () => {
+    document.body.classList.remove('printing-report');
+    document.title = prevTitle;
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+}
+
+async function generateReportPdf(){
+  const btn = document.getElementById('report-pdf');
+  const el = document.getElementById('report-doc');
+  if(!el.querySelector('.rp-head')) return; // still loading
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = 'Generating…';
+  let holder = null;
+  const prevScroll = window.scrollY;
+  try{
+    await loadHtml2Pdf();
+    // Let any thumbnails finish loading so they aren't blank in the PDF.
+    await Promise.all([...el.querySelectorAll('img')].map(img =>
+      img.complete ? null : new Promise(res => { img.onload = img.onerror = res; })));
+    // html2canvas crops the capture by the element's offset on the page
+    // (it sits to the right of the sidebar), so export a copy pinned to
+    // the top-left corner at a fixed A4-friendly width instead.
+    holder = document.createElement('div');
+    holder.style.cssText = 'position:absolute;left:0;top:0;width:760px;z-index:-1;';
+    const copy = el.cloneNode(true);
+    copy.classList.add('rp-export'); // opts out of the phone layout rules
+    copy.style.cssText = 'border:none;border-radius:0;padding:0;';
+    holder.appendChild(copy);
+    document.body.appendChild(holder);
+    window.scrollTo(0, 0);
+    await window.html2pdf().set({
+      margin: [10, 10, 14, 10],
+      filename: reportFileName,
+      image: { type: 'jpeg', quality: 0.92 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['.rp-ticket', '.rp-metrics', 'tr'] }
+    }).from(copy).toPdf().get('pdf').then(pdf => {
+      const total = pdf.internal.getNumberOfPages();
+      const w = pdf.internal.pageSize.getWidth();
+      const h = pdf.internal.pageSize.getHeight();
+      for(let i = 1; i <= total; i++){
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setTextColor(120);
+        pdf.text('Page ' + i + ' of ' + total, w - 10, h - 6, { align: 'right' });
+      }
+    }).save();
+  } catch(e){
+    // No network to the CDN (or the library failed): fall back to the
+    // browser's own print dialog, where "Save as PDF" gives the same result.
+    if(holder){ holder.remove(); holder = null; }
+    printReportFallback();
+  } finally {
+    if(holder){ holder.remove(); window.scrollTo(0, prevScroll); }
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+
 
 const ACTIVE_STATUSES = ['pending', 'in_progress'];
 
