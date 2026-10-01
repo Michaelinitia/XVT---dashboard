@@ -238,6 +238,29 @@
   .history-bubble .tl-title{font-size:10.5px;}
   .history-bubble .tl-meta{font-size:9.5px;}
 
+  /* Confirmation shown after a public submission — the reference number is
+     the same short code staff see on the ticket and in Telegram. */
+  .submit-receipt{margin-top:16px;border:1px solid var(--low);background:var(--low-bg);border-radius:8px;padding:14px 16px;color:var(--ink);font-size:14px;}
+  .submit-receipt .receipt-title{font-family:'Oswald',sans-serif;font-weight:600;font-size:15px;text-transform:uppercase;letter-spacing:0.03em;color:var(--low);}
+  .submit-receipt .receipt-ref{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:500;letter-spacing:0.06em;margin:6px 0 8px;color:var(--ink);}
+  .submit-receipt.urgent{border-color:var(--urgent);background:var(--urgent-bg);}
+  .submit-receipt.urgent .receipt-title{color:var(--urgent);}
+  .submit-receipt ol{margin:6px 0 0;padding-left:20px;color:var(--ink-soft);font-size:13px;}
+  .submit-receipt ol li{margin-bottom:2px;}
+
+  /* "Live" status line above the queue — shows when the auto-refresh last
+     ran, and turns red if it can't reach the server (e.g. login expired),
+     so an empty-looking queue is never mistaken for "all clear". */
+  .live-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);margin:-8px 0 14px;}
+  .live-status .dot{width:8px;height:8px;border-radius:50%;background:var(--low);flex-shrink:0;}
+  .live-status.stale .dot{background:var(--urgent);}
+  .live-status.stale{color:var(--urgent);font-weight:600;}
+  .live-status .new-count{background:var(--rust-bg);color:var(--rust-dark);border-radius:4px;padding:0 6px;font-weight:600;}
+  .ticket.just-arrived{animation:justArrived 2.4s ease-out;}
+  @keyframes justArrived{0%{box-shadow:0 0 0 3px var(--rust);}100%{box-shadow:0 0 0 0 transparent;}}
+  .section-heading{font-family:'Oswald',sans-serif;font-size:16px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;margin:4px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--rust);}
+  .section-heading.spaced{margin-top:28px;}
+
   /* Weekly Report: an on-screen preview of exactly what goes into the PDF.
      #report-doc is the single element that gets exported, so everything
      inside it is styled to read as a plain printed document (white page,
@@ -430,8 +453,7 @@
         <button data-sub="report">Weekly Report</button>
         <button data-sub="mytasks">My Tasks</button>
         <button data-sub="map">Outlet map</button>
-        <button data-sub="team">Team</button>
-        <button data-sub="settings">Settings</button>
+        <button data-sub="settings">Team &amp; Account</button>
         <button data-sub="history" id="history-tab-btn" style="display:none;">Service History</button>
       </div>
 
@@ -444,6 +466,7 @@
           </div>
           <div class="filters" id="filters"></div>
         </div>
+        <div class="live-status" id="live-status" aria-live="polite"><span class="dot"></span><span id="live-status-text">Live</span></div>
         <div id="ticket-list"></div>
       </div>
 
@@ -484,24 +507,18 @@
         <div class="zone-popover" id="zone-popover" style="display:none;"></div>
       </div>
 
-      <div class="subpanel" id="sub-team" style="display:none;">
-        <div class="team-list" id="team-list"></div>
-      </div>
-
       <div class="subpanel" id="sub-settings" style="display:none;">
-        <div class="card">
-          <label>Your email</label>
-          <div id="pw-email" style="margin-bottom:12px;color:var(--ink-soft);"></div>
-          <label>New password</label>
-          <input type="password" id="pw-new" placeholder="At least 6 characters" />
-          <label>Confirm new password</label>
-          <input type="password" id="pw-confirm" placeholder="Repeat new password" />
-          <button class="primary" id="pw-submit">Update password</button>
-          <div class="msg" id="pw-msg"></div>
-        </div>
-
+        <h3 class="section-heading">Team</h3>
+        <!-- Everyone sees the read-only team list; admins get the editable
+             permissions list in its place, so staff are only ever listed once. -->
+        <div class="team-list" id="team-list"></div>
         <div id="admin-settings-section" style="display:none;">
           <div class="card">
+            <label>Staff &amp; permissions</label>
+            <div id="perm-manage-list"><div class="empty">Loading team…</div></div>
+          </div>
+          <div class="card">
+            <h3 class="section-heading" style="font-size:14px;">Add staff member</h3>
             <label>Full name</label>
             <input type="text" id="acct-name" placeholder="Full name" />
             <label>Email</label>
@@ -524,12 +541,20 @@
             <button class="primary" id="acct-submit">Create account</button>
             <div class="msg" id="acct-msg"></div>
           </div>
-
-          <div class="card">
-            <label>Manage existing permissions</label>
-            <div id="perm-manage-list"><div class="empty">Loading team…</div></div>
-          </div>
         </div>
+
+        <h3 class="section-heading spaced">Your account</h3>
+        <div class="card">
+          <label>Your email</label>
+          <div id="pw-email" style="margin-bottom:12px;color:var(--ink-soft);"></div>
+          <label>New password</label>
+          <input type="password" id="pw-new" placeholder="At least 6 characters" />
+          <label>Confirm new password</label>
+          <input type="password" id="pw-confirm" placeholder="Repeat new password" />
+          <button class="primary" id="pw-submit">Update password</button>
+          <div class="msg" id="pw-msg"></div>
+        </div>
+
       </div>
 
       <div class="subpanel" id="sub-history" style="display:none;">
@@ -655,14 +680,13 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
 document.querySelectorAll('#main-subtabs button').forEach(b => {
   b.addEventListener('click', () => {
     document.querySelectorAll('#main-subtabs button').forEach(x => x.classList.toggle('active', x === b));
-    ['queue','dashboard','report','mytasks','map','team','settings','history'].forEach(name => {
+    ['queue','dashboard','report','mytasks','map','settings','history'].forEach(name => {
       document.getElementById('sub-' + name).style.display = (name === b.dataset.sub) ? 'block' : 'none';
     });
     if(b.dataset.sub === 'dashboard') openDashboard();
     if(b.dataset.sub === 'report') openWeeklyReport();
     if(b.dataset.sub === 'mytasks') renderMyTasks();
     if(b.dataset.sub === 'map') renderMap();
-    if(b.dataset.sub === 'team') renderTeam();
     if(b.dataset.sub === 'settings') renderSettings();
     if(b.dataset.sub === 'history') renderServiceHistory();
     closeMobileMenu();
@@ -828,6 +852,58 @@ async function uploadRequestImage(file){
   return SUPABASE_URL + '/storage/v1/object/public/request-images/' + path;
 }
 
+// request_id is generated here rather than by the database so the
+// confirmation can show the reference number straight away — the public
+// form has no permission to read the request back after inserting it.
+function newRequestId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0,8) + '-' + h.slice(8,12) + '-' + h.slice(12,16) + '-' + h.slice(16,20) + '-' + h.slice(20);
+}
+
+async function insertRequest(body){
+  const post = () => fetch(SUPABASE_URL + '/rest/v1/requests', {
+    method: 'POST',
+    headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify(body)
+  });
+  const res = await post();
+  if(res.ok) return res;
+  // Safety net: if the database ever refuses a client-supplied request_id,
+  // submit without it rather than lose the request — the person just
+  // won't see a reference number this time.
+  const err = await res.clone().json().catch(() => ({}));
+  if(/request_id/i.test(JSON.stringify(err))){
+    delete body.request_id;
+    return post();
+  }
+  return res;
+}
+
+function showSubmitReceipt(msg, requestId, isUrgent){
+  if(!requestId){
+    msg.textContent = isUrgent ? 'Request submitted and flagged as urgent. Staff will be notified immediately.' : 'Request submitted. Staff will be notified.';
+    msg.className = 'msg ok';
+    return;
+  }
+  msg.className = 'msg';
+  msg.innerHTML =
+    '<div class="submit-receipt' + (isUrgent ? ' urgent' : '') + '">' +
+      '<div class="receipt-title">' + (isUrgent ? 'Submitted — flagged urgent' : 'Request submitted') + '</div>' +
+      '<div>Your reference number</div>' +
+      '<div class="receipt-ref">' + escapeHtml(ticketRef(requestId)) + '</div>' +
+      '<div style="font-size:13px;">What happens next:</div>' +
+      '<ol>' +
+        '<li>The maintenance team has been notified on Telegram' + (isUrgent ? ' and will treat this as a priority' : '') + '.</li>' +
+        '<li>A staff member will claim it and post updates as work progresses.</li>' +
+        '<li>Quote ' + escapeHtml(ticketRef(requestId)) + ' if you need to follow up.</li>' +
+      '</ol>' +
+    '</div>';
+  msg.style.display = 'block';
+}
+
 // Uploads each file in sequence (not in parallel — keeps things simple and
 // avoids hammering Storage with a burst of simultaneous requests from a
 // single submission) and returns the array of resulting URLs. Throws on
@@ -912,19 +988,15 @@ document.getElementById('s-submit').addEventListener('click', async () => {
   // color, and the "Open & urgent" metric everywhere else in the app.
   const body = { outlet_id: submissionOutletId, request_type: 'defect', location_within_outlet, nature_of_defect, description, requires_new_equipment, requires_external_contractor, image_url, image_urls };
   if(is_safety_hazard) body.urgency = 'urgent';
+  body.request_id = newRequestId();
 
-  const res = await fetch(SUPABASE_URL + '/rest/v1/requests', {
-    method: 'POST',
-    headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify(body)
-  });
+  const res = await insertRequest(body);
 
   submitBtn.disabled = false;
   submitBtn.textContent = 'Submit request';
 
   if(res.ok){
-    msg.textContent = is_safety_hazard ? 'Request submitted and flagged as urgent. Staff will be notified immediately.' : 'Request submitted. Staff will be notified.';
-    msg.className = 'msg ok';
+    showSubmitReceipt(msg, body.request_id, is_safety_hazard);
     document.getElementById('s-description').value = '';
     document.getElementById('s-newequip').checked = false;
     document.getElementById('s-contractor').checked = false;
@@ -993,19 +1065,15 @@ document.getElementById('i-submit').addEventListener('click', async () => {
 
   const body = { outlet_id: submissionOutletId, request_type: 'improvement', location_within_outlet, nature_of_improvement, description, requires_new_equipment, requires_new_facilities, requires_external_contractor, image_url, image_urls };
   if(is_safety_hazard || is_boss_request) body.urgency = 'urgent';
+  body.request_id = newRequestId();
 
-  const res = await fetch(SUPABASE_URL + '/rest/v1/requests', {
-    method: 'POST',
-    headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify(body)
-  });
+  const res = await insertRequest(body);
 
   submitBtn.disabled = false;
   submitBtn.textContent = 'Submit request';
 
   if(res.ok){
-    msg.textContent = (is_safety_hazard || is_boss_request) ? 'Request submitted and flagged as urgent. Staff will be notified immediately.' : 'Request submitted. Staff will be notified.';
-    msg.className = 'msg ok';
+    showSubmitReceipt(msg, body.request_id, is_safety_hazard || is_boss_request);
     document.getElementById('i-description').value = '';
     document.getElementById('i-newequip').checked = false;
     document.getElementById('i-newfacilities').checked = false;
@@ -1070,6 +1138,7 @@ async function activateStaffSession(data){
   await initStaffOutletContext();
   await loadAllRequests();
   renderQueue();
+  startLiveRefresh();
 }
 
 async function tryRestoreSession(){
@@ -1157,6 +1226,7 @@ async function loadOwnPermissions(){
 }
 
 document.getElementById('logout').addEventListener('click', () => {
+  stopLiveRefresh();
   session = null;
   clearStoredSession();
   currentIsAdmin = false;
@@ -1203,11 +1273,107 @@ async function loadAllRequests(){
     allStaffRequests = [];
     return;
   }
-  const res = await fetch(SUPABASE_URL + '/rest/v1/requests?select=*,profiles(full_name)&order=submitted_at.desc&outlet_id=eq.' + outletId, {
-    headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
-  });
-  allStaffRequests = res.ok ? await res.json() : [];
+  const res = await fetchOutletRequests();
+  allStaffRequests = res.ok ? res.data : [];
+  if(res.ok) markLiveStatus(true);
 }
+
+async function fetchOutletRequests(){
+  try{
+    const res = await fetch(SUPABASE_URL + '/rest/v1/requests?select=*,profiles(full_name)&order=submitted_at.desc&outlet_id=eq.' + outletId, {
+      headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
+    });
+    return res.ok ? { ok: true, data: await res.json() } : { ok: false, status: res.status };
+  } catch(e){
+    return { ok: false, status: 0 };
+  }
+}
+
+// ---------------------------------------------------------------------
+// Live queue: re-fetches this outlet's requests every 30s (and right away
+// when the tab comes back into focus) so new submissions, claims and
+// resolutions from other staff show up without a reload.
+// - Only re-renders when something actually changed, so the page doesn't
+//   flicker or jump while someone is reading it.
+// - Skips a refresh while anyone has resolution photos picked but not yet
+//   submitted — re-rendering would drop that file selection.
+// - If the fetch fails it keeps the last good data on screen and turns the
+//   status line red, rather than wiping the queue to "All clear".
+// ---------------------------------------------------------------------
+const LIVE_REFRESH_MS = 30 * 1000;
+let liveTimer = null;
+let liveLastOkAt = null;
+let liveRefreshing = false;
+
+function requestsSignature(list){
+  return JSON.stringify(list.map(r => [r.request_id, r.status, r.assigned_to, r.claimed_at, r.resolved_at, r.eta_date, r.urgency]));
+}
+
+function markLiveStatus(ok, newCount, failStatus){
+  const el = document.getElementById('live-status');
+  const txt = document.getElementById('live-status-text');
+  if(!el) return;
+  if(ok) liveLastOkAt = new Date();
+  const when = liveLastOkAt ? liveLastOkAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '—';
+  el.classList.toggle('stale', !ok);
+  if(ok){
+    txt.innerHTML = 'Live · updated ' + escapeHtml(when) +
+      (newCount ? ' <span class="new-count">' + newCount + ' new</span>' : '');
+  } else {
+    txt.textContent = (failStatus === 401 || failStatus === 403)
+      ? 'Your login has expired — log out and back in to see new requests. (Last updated ' + when + ')'
+      : 'Can\u2019t reach the server — showing requests as of ' + when + '. Retrying…';
+  }
+}
+
+function hasPendingResolutionPhotos(){
+  return Array.from(document.querySelectorAll('[data-resolve-photo]')).some(i => i.files && i.files.length);
+}
+
+async function liveRefresh(){
+  if(!session || !outletId || liveRefreshing || document.hidden) return;
+  if(hasPendingResolutionPhotos()) return;
+  liveRefreshing = true;
+  const forOutlet = outletId;
+  try{
+    const res = await fetchOutletRequests();
+    if(forOutlet !== outletId || !session) return; // outlet switched / logged out meanwhile
+    if(!res.ok){
+      markLiveStatus(false, 0, res.status);
+      return;
+    }
+    const known = new Set(allStaffRequests.map(r => r.request_id));
+    const arrived = res.data.filter(r => !known.has(r.request_id)).map(r => r.request_id);
+    const changed = requestsSignature(res.data) !== requestsSignature(allStaffRequests);
+    markLiveStatus(true, arrived.length);
+    if(!changed || hasPendingResolutionPhotos()) return;
+    allStaffRequests = res.data;
+    renderQueue();
+    if(document.getElementById('sub-map').style.display !== 'none') renderMap();
+    if(document.getElementById('sub-dashboard').style.display !== 'none' && dashboardOutletFilter === 'current') renderDashboard();
+    arrived.forEach(id => {
+      document.querySelectorAll('#ticket-list .ticket, #mytasks-list .ticket').forEach(el => {
+        if(el.dataset.requestId === id) el.classList.add('just-arrived');
+      });
+    });
+  } finally {
+    liveRefreshing = false;
+  }
+}
+
+function startLiveRefresh(){
+  stopLiveRefresh();
+  liveTimer = setInterval(liveRefresh, LIVE_REFRESH_MS);
+}
+
+function stopLiveRefresh(){
+  if(liveTimer) clearInterval(liveTimer);
+  liveTimer = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden) liveRefresh();
+});
 
 async function loadAdminOutletsData(){
   // Admin-only: pulls every outlet's requests, unfiltered, purely so the
@@ -1300,6 +1466,7 @@ function etaBadge(r){
 
 function renderTicket(r, mode){
   const el = document.createElement('div');
+  el.dataset.requestId = r.request_id;
   if(mode === 'simple'){
     el.className = 'ticket ' + (r.urgency === 'urgent' ? 'simple-urgent' : 'simple-ok');
   } else {
@@ -1340,7 +1507,7 @@ function renderTicket(r, mode){
       '<div class="ticket-top"><div>' +
         '<span class="badge ' + (mode === 'simple' ? (r.urgency === 'urgent' ? 'simple-urgent' : 'simple-ok') : r.urgency) + '">' + r.urgency + '</span> ' +
         '<span class="badge ' + r.status + '">' + r.status.replace('_',' ') + '</span>' + staleBadge + etaBadge(r) +
-      '</div><span class="ticket-id">' + r.request_id.slice(0,8) + '</span></div>' +
+      '</div><span class="ticket-id">' + ticketRef(r.request_id) + '</span></div>' +
       '<div class="ticket-desc">' + escapeHtml(r.description) + '</div>' +
       '<div class="ticket-loc">' + escapeHtml(r.location_within_outlet) + ' &middot; ' + (r.nature_of_defect || r.nature_of_improvement || '').replace('_',' ') + '</div>' +
       ticketImage(r) +
@@ -1373,6 +1540,13 @@ function renderTicket(r, mode){
     openTicketDetail(r.request_id);
   });
   return el;
+}
+
+// The short reference shown to whoever submits a request, on every ticket
+// in the dashboard, and in the Telegram notifications — all derived from
+// the same request_id, so a "#3F9A1C07" quoted by anyone matches up.
+function ticketRef(id){
+  return '#' + String(id || '').slice(0, 8).toUpperCase();
 }
 
 function escapeHtml(s){
@@ -1765,7 +1939,7 @@ function renderTicketDetail(r, historyMode){
     '<div class="ticket-top" style="margin-top:8px;"><div>' +
       '<span class="badge ' + r.urgency + '">' + r.urgency + '</span> ' +
       '<span class="badge ' + r.status + '">' + r.status.replace('_',' ') + '</span>' + etaBadge(r) +
-    '</div><span class="ticket-id">' + r.request_id.slice(0,8) + '</span></div>' +
+    '</div><span class="ticket-id">' + ticketRef(r.request_id) + '</span></div>' +
     '<div class="ticket-desc" style="font-size:16px;margin-top:14px;">' + escapeHtml(r.description) + '</div>' +
     '<div class="ticket-loc">' + escapeHtml(r.location_within_outlet) + ' &middot; ' + (r.nature_of_defect || r.nature_of_improvement || '').replace('_',' ') + '</div>' +
     (r.requires_new_equipment ? '<div class="claimed-label" style="margin-top:8px;">Needs new equipment</div>' : '') +
@@ -2339,7 +2513,7 @@ function reportTicket(r, events, scope, includePhotos){
         '<span class="rp-type" style="color:' + (isImprovement ? 'var(--improve)' : 'var(--ink)') + ';">' + (isImprovement ? 'Improvement' : 'Defect') + '</span>' +
         '<span class="badge ' + escapeHtml(r.urgency || '') + '">' + escapeHtml(r.urgency || '') + '</span> ' +
         '<span class="badge ' + escapeHtml(r.status || '') + '">' + escapeHtml((r.status || '').replace('_', ' ')) + '</span>' +
-      '</div><span class="rp-id">#' + escapeHtml(r.request_id.slice(0, 8)) + '</span></div>' +
+      '</div><span class="rp-id">' + escapeHtml(ticketRef(r.request_id)) + '</span></div>' +
       '<div class="rp-body"><div class="rp-main">' +
         '<div class="rp-desc">' + escapeHtml(r.description) + '</div>' +
         '<div class="rp-sub">' +
@@ -2629,9 +2803,14 @@ document.getElementById('pw-submit').addEventListener('click', async () => {
   }
 });
 
+// Team & Account tab: admins manage staff in the editable list (which
+// already shows everyone), so the read-only team cards are only rendered
+// for non-admins — each person appears once either way.
 function renderSettings(){
   document.getElementById('pw-email').textContent = session.user.email;
+  document.getElementById('team-list').style.display = currentIsAdmin ? 'none' : '';
   if(currentIsAdmin) loadPermissionManageList();
+  else renderTeam();
 }
 
 const PERM_OPTIONS = [
