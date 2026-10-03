@@ -261,6 +261,36 @@
   .section-heading{font-family:'Oswald',sans-serif;font-size:16px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;margin:4px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--rust);}
   .section-heading.spaced{margin-top:28px;}
 
+  /* Outlets admin (Team & Account tab) */
+  .outlet-row{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--line);padding:12px 0;}
+  .outlet-row:first-child{border-top:none;padding-top:0;}
+  .outlet-row-main{min-width:0;}
+  .outlet-meta{font-size:12px;color:var(--ink-soft);margin-top:2px;word-break:break-all;}
+  .outlet-meta a{color:var(--steel);}
+  .link-btn{background:none;border:none;padding:0;color:var(--steel);text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;}
+  .link-btn:disabled{color:var(--ink-soft);text-decoration:none;cursor:default;opacity:0.6;}
+  .link-btn.danger{color:var(--urgent);}
+  button.secondary.small{padding:5px 10px;font-size:11px;}
+  .oe-note{font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.45;}
+  .oe-note code{font-size:11px;background:var(--paper);padding:1px 4px;border-radius:3px;word-break:break-all;}
+  .oe-map-empty{margin-top:12px;border:1px dashed var(--line);border-radius:8px;padding:28px 16px;text-align:center;color:var(--ink-soft);font-size:13px;background:#fff;}
+  .oe-map{position:relative;margin-top:12px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;user-select:none;-webkit-user-select:none;}
+  .oe-map img{width:100%;display:block;pointer-events:none;}
+  .oe-map svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+  .oe-map.placing{cursor:crosshair;outline:2px solid var(--rust);outline-offset:-2px;}
+  .oe-hint{font-size:13px;color:var(--ink);margin-top:8px;min-height:1em;}
+  .oe-hint.warn{color:var(--urgent);}
+  .oe-zone-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px;border:1px solid transparent;border-radius:6px;}
+  .oe-zone-row.active{background:var(--rust-bg);border-color:var(--rust-bg);}
+  .oe-zone-row input[type=text]{flex:1 1 180px;width:auto;}
+  .oe-zone-row select{width:auto;}
+  .oe-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
+  .oe-zone-status{font-size:11px;color:var(--ink-soft);}
+  .oe-telegram{margin-top:20px;border-top:1px solid var(--line);padding-top:12px;}
+  .oe-telegram summary{cursor:pointer;font-family:'Oswald',sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink);}
+  .oe-tg-grid{display:grid;grid-template-columns:2fr 1fr;gap:0 12px;}
+  @media (max-width:620px){ .oe-tg-grid{grid-template-columns:1fr;} .outlet-row{flex-direction:column;align-items:flex-start;} }
+
   /* Weekly Report: an on-screen preview of exactly what goes into the PDF.
      #report-doc is the single element that gets exported, so everything
      inside it is styled to read as a plain printed document (white page,
@@ -541,6 +571,14 @@
             <button class="primary" id="acct-submit">Create account</button>
             <div class="msg" id="acct-msg"></div>
           </div>
+
+          <h3 class="section-heading spaced">Outlets</h3>
+          <div class="card">
+            <div id="outlet-admin-list"></div>
+            <button class="primary" id="outlet-add-btn">+ Add outlet</button>
+            <div class="msg" id="outlet-admin-msg"></div>
+          </div>
+          <div class="card" id="outlet-editor" style="display:none;"></div>
         </div>
 
         <h3 class="section-heading spaced">Your account</h3>
@@ -635,10 +673,93 @@ const OUTLET_ZONE_CONFIG = {
 // Case-/whitespace-insensitive lookup so small discrepancies between what's
 // stored in Supabase and these hardcoded keys don't silently fall back to
 // the wrong outlet's map.
-function getOutletZoneConfig(name){
-  const normalized = (name || '').trim().toUpperCase();
+//
+// Lookup order: a floor plan drawn in the dashboard (outlets.map_config,
+// set up by an admin in Team & Account → Outlets) wins; otherwise the
+// built-in config above by name; otherwise no map, with a single
+// "General" location so the outlet can still take requests. (This used to
+// fall back to KLGCC's layout, which silently gave new outlets the wrong
+// zones.)
+const NO_MAP_CONFIG = { noMap: true, viewBox: '0 0 100 100', mapImage: '', zoneSvgInner: '', zonePins: {}, locations: ['General'] };
+
+function getOutletConfig(id, name){
+  const meta = id ? outletMeta[id] : null;
+  const fromDb = meta ? buildMapConfig(meta.map_config) : null;
+  if(fromDb) return fromDb;
+  const normalized = (name || (meta && meta.outlet_name) || '').trim().toUpperCase();
   const matchKey = Object.keys(OUTLET_ZONE_CONFIG).find(k => k.trim().toUpperCase() === normalized);
-  return OUTLET_ZONE_CONFIG[matchKey] || OUTLET_ZONE_CONFIG['KLGCC'];
+  return OUTLET_ZONE_CONFIG[matchKey] || NO_MAP_CONFIG;
+}
+
+function validPoint(p){
+  return Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]);
+}
+
+function polygonCentroid(pts){
+  const sx = pts.reduce((a, p) => a + p[0], 0), sy = pts.reduce((a, p) => a + p[1], 0);
+  return [Math.round(sx / pts.length), Math.round(sy / pts.length)];
+}
+
+// Turns a stored map_config into the same shape as the built-in configs
+// (viewBox / mapImage / zoneSvgInner / zonePins / locations), so the map,
+// pins and location dropdowns don't need to know where it came from.
+function buildMapConfig(mc){
+  if(!mc || !Array.isArray(mc.zones)) return null;
+  const zones = mc.zones.filter(z => z && typeof z.name === 'string' && z.name.trim());
+  if(!zones.length) return null;
+  const w = Number(mc.width) || 1000, h = Number(mc.height) || 1000;
+  const kind = z => (['foh', 'boh', 'other'].includes(z.kind) ? z.kind : 'foh');
+  const fs = Math.max(12, Math.round(w / 55));
+  let svg =
+    '<style>' +
+      '.zone-poly{fill-opacity:0.16;stroke-width:3;stroke-linejoin:round;}' +
+      '.zone-poly.foh{stroke:#d92b2b;fill:#d92b2b;} .zone-poly.boh{stroke:#1a3fa0;fill:#1a3fa0;} .zone-poly.other{stroke:#1f8a3d;fill:#1f8a3d;}' +
+      ".zone-label{font-family:'Oswald',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:0.02em;paint-order:stroke;stroke:#fff;stroke-linejoin:round;}" +
+      '.zone-label.foh{fill:#b81f1f;} .zone-label.boh{fill:#152f7a;} .zone-label.other{fill:#166b30;}' +
+    '</style>';
+  const pins = {};
+  zones.forEach(z => {
+    const pts = Array.isArray(z.points) ? z.points.filter(validPoint) : [];
+    if(pts.length >= 3){
+      svg += '<polygon class="zone-poly ' + kind(z) + '" points="' + pts.map(p => p[0] + ',' + p[1]).join(' ') + '"></polygon>';
+    }
+    const anchor = validPoint(z.pin) ? z.pin : (pts.length >= 3 ? polygonCentroid(pts) : null);
+    if(anchor){
+      // Label sits just under the pin.
+      svg += '<text class="zone-label ' + kind(z) + '" x="' + anchor[0] + '" y="' + Math.round(anchor[1] + fs * 2.5) + '" text-anchor="middle" ' +
+        'style="font-size:' + fs + 'px;stroke-width:' + Math.max(3, Math.round(fs / 6)) + 'px;">' + escapeHtml(z.name.trim()) + '</text>';
+      pins[z.name.trim()] = { top: (anchor[1] / h * 100).toFixed(1) + '%', left: (anchor[0] / w * 100).toFixed(1) + '%' };
+    }
+  });
+  return {
+    noMap: !mc.image_url,
+    viewBox: '0 0 ' + w + ' ' + h,
+    mapImage: mc.image_url || '',
+    zoneSvgInner: svg,
+    zonePins: pins,
+    locations: zones.map(z => z.name.trim())
+  };
+}
+
+// outlet_id -> outlet row (name, map_config, …), filled by every outlets
+// fetch so getOutletConfig() can find an outlet's dashboard-drawn map.
+const outletMeta = {};
+function rememberOutlets(rows){
+  (rows || []).forEach(o => { if(o && o.outlet_id) outletMeta[o.outlet_id] = Object.assign(outletMeta[o.outlet_id] || {}, o); });
+}
+
+// Fetches outlets including map_config, falling back to the old column
+// list if the database hasn't had supabase/outlet_admin_setup.sql run yet
+// — so the public QR form keeps working either way.
+async function fetchOutletRows(filter, withAuth){
+  const headers = { apikey: PUBLISHABLE_KEY };
+  if(withAuth && session) headers.Authorization = 'Bearer ' + session.access_token;
+  const base = SUPABASE_URL + '/rest/v1/outlets?' + (filter ? filter + '&' : '');
+  let res = await fetch(base + 'select=outlet_id,outlet_name,map_config&order=outlet_name.asc', { headers }).catch(() => null);
+  if(!res || !res.ok) res = await fetch(base + 'select=outlet_id,outlet_name&order=outlet_name.asc', { headers }).catch(() => null);
+  const rows = (res && res.ok) ? await res.json().catch(() => []) : [];
+  rememberOutlets(rows);
+  return rows;
 }
 
 // Populates the "Location within outlet" dropdowns on the public
@@ -648,10 +769,10 @@ function getOutletZoneConfig(name){
 // staff member elsewhere in the same browser tab is currently browsing
 // KLGCC's queue.
 function applySubmissionLocations(){
-  const config = getOutletZoneConfig(submissionOutletName);
+  const config = getOutletConfig(submissionOutletId, submissionOutletName);
   [['s-location', document.getElementById('s-location')], ['i-location', document.getElementById('i-location')]].forEach(([id, sel]) => {
     if(!sel) return;
-    sel.innerHTML = config.locations.map(loc => '<option value="' + loc + '">' + loc + '</option>').join('');
+    sel.innerHTML = config.locations.map(loc => '<option value="' + escapeHtml(loc) + '">' + escapeHtml(loc) + '</option>').join('');
   });
 }
 
@@ -668,10 +789,16 @@ function updateOutletTheme(){
 
 function applyStaffMap(){
   updateOutletTheme();
-  const config = getOutletZoneConfig(outletName);
+  const config = getOutletConfig(outletId, outletName);
   const wrap = document.getElementById('map-wrap');
+  if(config.noMap){
+    wrap.innerHTML = '<div class="empty">No floor plan set up for this outlet yet.' +
+      (currentIsAdmin ? ' Add one in Team &amp; Account → Outlets.' : '') + '</div>';
+    ZONE_PINS = {};
+    return;
+  }
   wrap.innerHTML =
-    '<img src="' + config.mapImage + '" alt="Outlet floor plan" />' +
+    '<img src="' + escapeHtml(config.mapImage) + '" alt="Outlet floor plan" />' +
     '<svg class="zone-overlay" viewBox="' + config.viewBox + '" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;">' +
     config.zoneSvgInner + '</svg>';
   ZONE_PINS = config.zonePins;
@@ -742,10 +869,7 @@ async function resolveOutlet(){
   if(urlOutlet){
     outletId = urlOutlet;
   } else if(urlQr){
-    const res = await fetch(SUPABASE_URL + '/rest/v1/outlets?select=outlet_id,outlet_name&qr_token=eq.' + encodeURIComponent(urlQr), {
-      headers: { apikey: PUBLISHABLE_KEY }
-    });
-    const data = await res.json().catch(() => []);
+    const data = await fetchOutletRows('qr_token=eq.' + encodeURIComponent(urlQr), false);
     if(data && data[0]) outletId = data[0].outlet_id;
   }
 
@@ -754,10 +878,7 @@ async function resolveOutlet(){
     return;
   }
 
-  const res = await fetch(SUPABASE_URL + '/rest/v1/outlets?select=outlet_name&outlet_id=eq.' + outletId, {
-    headers: { apikey: PUBLISHABLE_KEY }
-  });
-  const data = await res.json().catch(() => []);
+  const data = await fetchOutletRows('outlet_id=eq.' + encodeURIComponent(outletId), false);
   if(data && data[0]){
     outletName = data[0].outlet_name;
     submissionOutletId = outletId;
@@ -1187,23 +1308,34 @@ document.getElementById('l-submit').addEventListener('click', async () => {
 // Outlet map, and submission forms all have nothing to scope to — which is
 // what caused tasks to "disappear" and the floor plan to show blank when
 // someone logged in from a link that wasn't tied to a specific outlet.
-async function initStaffOutletContext(){
-  const pickerWrap = document.getElementById('staff-outlet-picker');
-  pickerWrap.style.display = 'inline-flex';
-  const res = await fetch(SUPABASE_URL + '/rest/v1/outlets?select=outlet_id,outlet_name&order=outlet_name.asc', {
-    headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
-  });
-  const outlets = res.ok ? await res.json() : [];
+let staffPickerOutlets = [];
+let staffPickerWired = false;
+
+// Re-run after an admin adds or renames an outlet, so it shows up in the
+// picker straight away.
+async function refreshStaffOutletPicker(){
+  staffPickerOutlets = await fetchOutletRows('', true);
   const sel = document.getElementById('staff-outlet-select');
-  sel.innerHTML = '<option value="">Select outlet…</option>' + outlets.map(o =>
+  sel.innerHTML = '<option value="">Select outlet…</option>' + staffPickerOutlets.map(o =>
     '<option value="' + o.outlet_id + '">' + escapeHtml(o.outlet_name) + '</option>'
   ).join('');
   // Default to whichever outlet the QR/link resolved to, if any — staff
   // can freely switch from here without affecting what the Defects/
   // Improvements forms submit against (that stays pinned to the QR).
   if(outletId) sel.value = outletId;
+}
+
+async function initStaffOutletContext(){
+  const pickerWrap = document.getElementById('staff-outlet-picker');
+  pickerWrap.style.display = 'inline-flex';
+  await refreshStaffOutletPicker();
+  // Wired once per page load — logging out and back in used to add a
+  // second listener each time.
+  if(staffPickerWired) return;
+  staffPickerWired = true;
+  const sel = document.getElementById('staff-outlet-select');
   sel.addEventListener('change', async () => {
-    const chosen = outlets.find(o => o.outlet_id === sel.value);
+    const chosen = staffPickerOutlets.find(o => o.outlet_id === sel.value);
     if(!chosen) return;
     outletId = chosen.outlet_id;
     outletName = chosen.outlet_name;
@@ -1390,15 +1522,13 @@ async function loadAdminOutletsData(){
   // and Outlet map tabs never use this — they stay scoped to the current
   // outlet for everyone, admins included.
   if(!currentIsAdmin || !session) return;
-  const [outletsRes, allRes] = await Promise.all([
-    fetch(SUPABASE_URL + '/rest/v1/outlets?select=outlet_id,outlet_name&order=outlet_name.asc', {
-      headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
-    }),
+  const [outletRows, allRes] = await Promise.all([
+    fetchOutletRows('', true),
     fetch(SUPABASE_URL + '/rest/v1/requests?select=*,profiles(full_name)&order=submitted_at.desc', {
       headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
     })
   ]);
-  outletsList = outletsRes.ok ? await outletsRes.json() : [];
+  outletsList = outletRows;
   adminAllRequests = allRes.ok ? await allRes.json() : [];
 }
 
@@ -2818,8 +2948,12 @@ document.getElementById('pw-submit').addEventListener('click', async () => {
 function renderSettings(){
   document.getElementById('pw-email').textContent = session.user.email;
   document.getElementById('team-list').style.display = currentIsAdmin ? 'none' : '';
-  if(currentIsAdmin) loadPermissionManageList();
-  else renderTeam();
+  if(currentIsAdmin){
+    loadPermissionManageList();
+    renderOutletAdmin();
+  } else {
+    renderTeam();
+  }
 }
 
 const PERM_OPTIONS = [
@@ -2922,6 +3056,701 @@ async function loadPermissionManageList(){
     }
   });
 }
+
+// ---------------------------------------------------------------------
+// Outlets (admin): add outlets, upload a floor plan (image or PDF), draw
+// each zone's area and place its map pin, and fill in the outlet's
+// Telegram groups for later. Everything is saved on the outlets row
+// (map_config + telegram_* columns), so no code change is needed to bring
+// a new outlet online. Needs supabase/outlet_admin_setup.sql to have been
+// run once; writes are limited to admins by its RLS policies.
+// ---------------------------------------------------------------------
+let outletAdminRows = [];
+let outletEditor = null;
+
+const ZONE_KINDS = [
+  { key: 'foh', label: 'FOH', color: '#d92b2b' },
+  { key: 'boh', label: 'BOH', color: '#1a3fa0' },
+  { key: 'other', label: 'Other', color: '#1f8a3d' }
+];
+const zoneColor = k => (ZONE_KINDS.find(z => z.key === k) || ZONE_KINDS[0]).color;
+const guessZoneKind = name => (/^\s*boh\b|kitchen|dishwash|prep|chiller|store/i.test(name || '') ? 'boh' : 'foh');
+
+function outletQrLink(token){
+  return location.origin + location.pathname + '?qr=' + encodeURIComponent(token);
+}
+
+function outletHasTelegramGroups(o){
+  return !!(o.telegram_chat_id_defects || o.telegram_chat_id_improvements || o.telegram_submitter_chat_id);
+}
+
+async function renderOutletAdmin(){
+  const list = document.getElementById('outlet-admin-list');
+  if(!currentIsAdmin){ list.innerHTML = ''; return; }
+  list.innerHTML = '<div class="empty">Loading outlets…</div>';
+  const res = await fetch(SUPABASE_URL + '/rest/v1/outlets?select=*&order=outlet_name.asc', {
+    headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
+  }).catch(() => null);
+  outletAdminRows = (res && res.ok) ? await res.json() : [];
+  rememberOutlets(outletAdminRows);
+  if(!outletAdminRows.length){
+    list.innerHTML = '<div class="empty">No outlets found.</div>';
+    return;
+  }
+  const setupMissing = outletAdminRows.length && !('map_config' in outletAdminRows[0]);
+  list.innerHTML =
+    (setupMissing
+      ? '<div class="msg err" style="display:block;margin:0 0 12px;">The database isn\'t set up for outlet editing yet. Run <strong>supabase/outlet_admin_setup.sql</strong> in Supabase → SQL Editor, then reload.</div>'
+      : '') +
+    outletAdminRows.map(o => {
+      const cfg = getOutletConfig(o.outlet_id, o.outlet_name);
+      const mapStatus = buildMapConfig(o.map_config) ? (cfg.noMap ? 'Zones only (no floor plan)' : 'Custom floor plan')
+        : (cfg.noMap ? 'No floor plan' : 'Built-in floor plan');
+      const tg = o.telegram_enabled === false ? 'Telegram off'
+        : (outletHasTelegramGroups(o) ? 'Telegram on' : 'Telegram on (fallback groups)');
+      const qr = o.qr_token ? outletQrLink(o.qr_token) : '';
+      return '<div class="outlet-row">' +
+        '<div class="outlet-row-main">' +
+          '<div class="team-name" style="margin-bottom:4px;">' + escapeHtml(o.outlet_name) + '</div>' +
+          '<div class="outlet-meta">' + escapeHtml(mapStatus) + ' · ' + cfg.locations.length + ' zone' + (cfg.locations.length === 1 ? '' : 's') + ' · ' + escapeHtml(tg) + '</div>' +
+          (qr ? '<div class="outlet-meta"><a href="' + escapeHtml(qr) + '" target="_blank" rel="noopener">QR link</a> · <button type="button" class="link-btn" data-copy-qr="' + escapeHtml(qr) + '">Copy</button></div>' : '') +
+        '</div>' +
+        '<button class="secondary" data-edit-outlet="' + escapeHtml(o.outlet_id) + '">Edit</button>' +
+      '</div>';
+    }).join('');
+  list.querySelectorAll('[data-edit-outlet]').forEach(b => b.addEventListener('click', () => {
+    openOutletEditor(outletAdminRows.find(o => o.outlet_id === b.dataset.editOutlet));
+  }));
+  list.querySelectorAll('[data-copy-qr]').forEach(b => b.addEventListener('click', async () => {
+    try{ await navigator.clipboard.writeText(b.dataset.copyQr); b.textContent = 'Copied'; }
+    catch(e){ prompt('Copy this QR link:', b.dataset.copyQr); }
+  }));
+}
+
+function openOutletEditor(row){
+  const mc = row && row.map_config;
+  const builtIn = row && !buildMapConfig(mc) ? getOutletConfig(null, row.outlet_name) : null;
+  outletEditor = {
+    id: row ? row.outlet_id : null,
+    name: row ? row.outlet_name : '',
+    imageUrl: (mc && mc.image_url) || null,   // saved image, or a local preview URL
+    imageBlob: null,                          // new image waiting to be uploaded
+    width: (mc && mc.width) || 0,
+    height: (mc && mc.height) || 0,
+    zones: (mc && Array.isArray(mc.zones)) ? mc.zones.map(z => ({
+      name: z.name || '', kind: z.kind || guessZoneKind(z.name),
+      pin: validPoint(z.pin) ? z.pin.slice() : null,
+      points: Array.isArray(z.points) ? z.points.filter(validPoint).map(p => p.slice()) : []
+    })) : [],
+    builtInLocations: builtIn && !builtIn.noMap ? builtIn.locations.slice() : null,
+    active: 0,
+    mode: null,          // 'pin' | 'draw'
+    draft: [],
+    pdfFile: null, pdfPages: 0, pdfPage: 1,
+    tg: {
+      enabled: row ? row.telegram_enabled !== false : false,
+      chat_def: (row && row.telegram_chat_id_defects) || '', thr_def: (row && row.telegram_thread_id_defects) || '',
+      chat_imp: (row && row.telegram_chat_id_improvements) || '', thr_imp: (row && row.telegram_thread_id_improvements) || '',
+      chat_upd: (row && row.telegram_submitter_chat_id) || '', thr_upd: (row && row.telegram_submitter_thread_id) || ''
+    }
+  };
+  if(!outletEditor.zones.length && !outletEditor.builtInLocations){
+    outletEditor.zones.push({ name: '', kind: 'foh', pin: null, points: [] });
+  }
+  renderOutletEditor();
+  document.getElementById('outlet-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeOutletEditor(){
+  outletEditor = null;
+  const el = document.getElementById('outlet-editor');
+  el.style.display = 'none';
+  el.innerHTML = '';
+}
+
+function renderOutletEditor(){
+  const oe = outletEditor;
+  const el = document.getElementById('outlet-editor');
+  el.style.display = 'block';
+  const tgField = (key, label, ph) =>
+    '<div><label>' + label + '</label><input type="text" data-tg="' + key + '" value="' + escapeHtml(oe.tg[key]) + '" placeholder="' + ph + '" /></div>';
+  el.innerHTML =
+    '<h3 class="section-heading" style="font-size:14px;">' + (oe.id ? 'Edit outlet' : 'Add outlet') + '</h3>' +
+    '<label for="oe-name">Outlet name</label>' +
+    '<input type="text" id="oe-name" value="' + escapeHtml(oe.name) + '" placeholder="e.g. Memir TRX" />' +
+
+    '<label for="oe-file">Floor plan (image or PDF)</label>' +
+    '<input type="file" id="oe-file" accept="image/*,application/pdf" />' +
+    '<div id="oe-pdf-page" style="margin-top:8px;"></div>' +
+    (oe.builtInLocations && !oe.imageUrl
+      ? '<div class="oe-note">This outlet uses a built-in floor plan with zones: ' + oe.builtInLocations.map(escapeHtml).join(', ') + '. Upload a floor plan here only if you want to replace it — those zone names are kept so existing requests still match.</div>'
+      : '<div class="oe-note">Blank margins are trimmed automatically. Keep zone names the same when editing, so existing requests still match their zone.</div>') +
+
+    '<div id="oe-map-area"></div>' +
+    '<div class="oe-hint" id="oe-hint"></div>' +
+
+    '<label>Zones</label>' +
+    '<div id="oe-zones"></div>' +
+    '<button type="button" class="secondary" id="oe-add-zone" style="margin-top:8px;">+ Add zone</button>' +
+
+    '<details class="oe-telegram"' + (oe.tg.enabled || oe.tg.chat_def ? ' open' : '') + '>' +
+      '<summary>Telegram alerts</summary>' +
+      '<div class="oe-note">Add the bot to each group, post a message in it, then open ' +
+        '<code>https://api.telegram.org/bot&lt;BOT_TOKEN&gt;/getUpdates</code> and copy the group\'s <code>chat.id</code> ' +
+        '(e.g. -100123…) and, for topics, <code>message_thread_id</code>. Leave alerts off until the groups are ready — ' +
+        'nothing is sent for this outlet while they\'re off.</div>' +
+      '<label class="inline-check" style="margin-top:10px;"><input type="checkbox" id="oe-tg-enabled"' + (oe.tg.enabled ? ' checked' : '') + ' /> Send Telegram alerts for this outlet</label>' +
+      '<div class="oe-tg-grid">' +
+        tgField('chat_def', 'New defects — group chat id', '-100…') + tgField('thr_def', 'Topic id (optional)', '') +
+        tgField('chat_imp', 'New improvements — group chat id', '-100…') + tgField('thr_imp', 'Topic id (optional)', '') +
+        tgField('chat_upd', 'Claimed / resolved updates — group chat id', '-100…') + tgField('thr_upd', 'Topic id (optional)', '') +
+      '</div>' +
+    '</details>' +
+
+    '<div style="margin-top:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
+      '<button class="primary" id="oe-save" style="margin-top:0;">Save outlet</button>' +
+      '<button type="button" class="secondary" id="oe-cancel">Cancel</button>' +
+    '</div>' +
+    '<div class="msg" id="oe-msg"></div>';
+
+  document.getElementById('oe-name').addEventListener('input', e => { oe.name = e.target.value; });
+  document.getElementById('oe-file').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(f) handleFloorPlanFile(f);
+  });
+  document.getElementById('oe-add-zone').addEventListener('click', () => {
+    oe.zones.push({ name: '', kind: 'foh', pin: null, points: [] });
+    oe.active = oe.zones.length - 1;
+    renderOeZones();
+    const inputs = document.querySelectorAll('#oe-zones [data-zone-name]');
+    if(inputs.length) inputs[inputs.length - 1].focus();
+  });
+  el.querySelectorAll('[data-tg]').forEach(i => i.addEventListener('input', () => { oe.tg[i.dataset.tg] = i.value.trim(); }));
+  document.getElementById('oe-tg-enabled').addEventListener('change', e => { oe.tg.enabled = e.target.checked; });
+  document.getElementById('oe-save').addEventListener('click', saveOutlet);
+  document.getElementById('oe-cancel').addEventListener('click', closeOutletEditor);
+
+  renderOePdfPicker();
+  renderOeMap();
+  renderOeZones();
+}
+
+function setOeHint(html, isWarn){
+  const h = document.getElementById('oe-hint');
+  if(!h) return;
+  h.innerHTML = html || '';
+  h.className = 'oe-hint' + (isWarn ? ' warn' : '');
+}
+
+// ---- Floor plan file → trimmed, resized JPEG ----
+let pdfJsPromise = null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(!pdfJsPromise){
+    pdfJsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      };
+      s.onerror = () => { pdfJsPromise = null; reject(new Error('Could not load the PDF reader — try uploading a PNG or JPG instead.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return pdfJsPromise;
+}
+
+async function renderPdfPageToCanvas(file, pageNo){
+  const pdfjsLib = await loadPdfJs();
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const page = await pdf.getPage(Math.min(Math.max(1, pageNo), pdf.numPages));
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: 2400 / Math.max(base.width, base.height) });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return { canvas, pages: pdf.numPages };
+}
+
+function imageFileToCanvas(file){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+    img.src = url;
+  });
+}
+
+// Crops away blank margins (architectural PDFs are often mostly white
+// page), then caps the longest edge at 1600px and encodes as JPEG.
+function trimAndEncode(canvas){
+  const ctx = canvas.getContext('2d');
+  const { width: W, height: H } = canvas;
+  const data = ctx.getImageData(0, 0, W, H).data;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for(let y = 0; y < H; y += 2){
+    for(let x = 0; x < W; x += 2){
+      const i = (y * W + x) * 4;
+      if(data[i + 3] > 10 && (data[i] < 235 || data[i + 1] < 235 || data[i + 2] < 235)){
+        if(x < minX) minX = x; if(x > maxX) maxX = x;
+        if(y < minY) minY = y; if(y > maxY) maxY = y;
+      }
+    }
+  }
+  if(maxX < 0){ minX = 0; minY = 0; maxX = W - 1; maxY = H - 1; }
+  const pad = Math.round(Math.max(maxX - minX, maxY - minY) * 0.02);
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+  maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
+  const cw = maxX - minX + 1, ch = maxY - minY + 1;
+  const scale = Math.min(1, 1600 / Math.max(cw, ch));
+  const out = document.createElement('canvas');
+  out.width = Math.round(cw * scale);
+  out.height = Math.round(ch * scale);
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#fff';
+  octx.fillRect(0, 0, out.width, out.height);
+  octx.drawImage(canvas, minX, minY, cw, ch, 0, 0, out.width, out.height);
+  return new Promise(resolve => out.toBlob(blob => resolve({ blob, width: out.width, height: out.height }), 'image/jpeg', 0.85));
+}
+
+async function handleFloorPlanFile(file, pageNo){
+  const oe = outletEditor;
+  if(!oe) return;
+  setOeHint('Preparing floor plan…');
+  try{
+    let canvas;
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    if(isPdf){
+      const r = await renderPdfPageToCanvas(file, pageNo || 1);
+      canvas = r.canvas;
+      oe.pdfFile = file; oe.pdfPages = r.pages; oe.pdfPage = pageNo || 1;
+    } else {
+      canvas = await imageFileToCanvas(file);
+      oe.pdfFile = null; oe.pdfPages = 0;
+    }
+    const { blob, width, height } = await trimAndEncode(canvas);
+    if(outletEditor !== oe) return;
+    const hadPositions = oe.zones.some(z => z.pin || z.points.length);
+    if(oe.imageBlob && oe.imageUrl) URL.revokeObjectURL(oe.imageUrl);
+    oe.imageBlob = blob;
+    oe.imageUrl = URL.createObjectURL(blob);
+    oe.width = width; oe.height = height;
+    // Positions belong to the old picture, so they're cleared; names stay.
+    oe.zones.forEach(z => { z.pin = null; z.points = []; });
+    if(oe.builtInLocations && !oe.zones.some(z => z.name.trim())){
+      oe.zones = oe.builtInLocations.map(n => ({ name: n, kind: guessZoneKind(n), pin: null, points: [] }));
+    }
+    oe.mode = null; oe.draft = [];
+    renderOePdfPicker();
+    renderOeMap();
+    renderOeZones();
+    setOeHint(hadPositions
+      ? 'New floor plan loaded — zone areas and pins were cleared because they belonged to the old one. Draw them again below.'
+      : 'Floor plan loaded. For each zone: <strong>Draw area</strong> (click its corners, then click the first point or <em>Finish</em>) and <strong>Place pin</strong>.');
+  } catch(e){
+    setOeHint(escapeHtml(e.message || 'Could not read that file.'), true);
+  }
+}
+
+function renderOePdfPicker(){
+  const oe = outletEditor;
+  const el = document.getElementById('oe-pdf-page');
+  if(!el) return;
+  if(!oe.pdfFile || oe.pdfPages < 2){ el.innerHTML = ''; return; }
+  let opts = '';
+  for(let i = 1; i <= oe.pdfPages; i++) opts += '<option value="' + i + '"' + (i === oe.pdfPage ? ' selected' : '') + '>Page ' + i + '</option>';
+  el.innerHTML = '<span class="oe-note" style="margin-right:8px;">This PDF has ' + oe.pdfPages + ' pages — use:</span><select id="oe-pdf-select" style="width:auto;">' + opts + '</select>';
+  document.getElementById('oe-pdf-select').addEventListener('change', e => handleFloorPlanFile(oe.pdfFile, Number(e.target.value)));
+}
+
+// ---- Drawing on the floor plan ----
+function renderOeMap(){
+  const oe = outletEditor;
+  const area = document.getElementById('oe-map-area');
+  if(!area) return;
+  if(!oe.imageUrl){
+    area.innerHTML = '<div class="oe-map-empty">' + (oe.builtInLocations ? 'Using the built-in floor plan.' : 'Upload a floor plan to draw zones on it. (Zones without a floor plan still work as locations on the request form.)') + '</div>';
+    return;
+  }
+  const w = oe.width, h = oe.height;
+  const r = Math.max(6, Math.round(w / 90));
+  const fs = Math.max(12, Math.round(w / 55));
+  let svg = '';
+  oe.zones.forEach((z, i) => {
+    const c = zoneColor(z.kind);
+    const isActive = i === oe.active;
+    if(z.points.length >= 3){
+      svg += '<polygon points="' + z.points.map(p => p.join(',')).join(' ') + '" fill="' + c + '" fill-opacity="' + (isActive ? 0.28 : 0.16) + '" stroke="' + c + '" stroke-width="' + (isActive ? r / 1.5 : r / 3) + '" stroke-linejoin="round"></polygon>';
+    }
+  });
+  oe.zones.forEach((z, i) => {
+    const c = zoneColor(z.kind);
+    const anchor = z.pin || (z.points.length >= 3 ? polygonCentroid(z.points) : null);
+    if(!anchor) return;
+    if(z.pin) svg += '<circle cx="' + z.pin[0] + '" cy="' + z.pin[1] + '" r="' + r * 1.6 + '" fill="' + c + '" stroke="#fff" stroke-width="' + r / 2 + '"></circle>';
+    svg += '<text x="' + anchor[0] + '" y="' + Math.round(anchor[1] + fs * 2.5) + '" text-anchor="middle" font-family="Oswald, sans-serif" font-weight="700" font-size="' + fs + '" fill="' + c + '" stroke="#fff" stroke-width="' + Math.max(3, fs / 6) + '" paint-order="stroke">' + escapeHtml((z.name || 'Zone ' + (i + 1)).toUpperCase()) + '</text>';
+  });
+  if(oe.mode === 'draw' && oe.draft.length){
+    const c = zoneColor((oe.zones[oe.active] || {}).kind);
+    svg += '<polyline points="' + oe.draft.map(p => p.join(',')).join(' ') + '" fill="none" stroke="' + c + '" stroke-width="' + r / 2 + '" stroke-dasharray="' + r + ' ' + r / 2 + '"></polyline>';
+    oe.draft.forEach((p, k) => {
+      svg += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (k === 0 ? r * 1.3 : r * 0.8) + '" fill="' + (k === 0 ? '#fff' : c) + '" stroke="' + c + '" stroke-width="' + r / 3 + '"></circle>';
+    });
+  }
+  // Only the overlay is redrawn on each change: rebuilding the <img> made
+  // it momentarily zero-height, shifting the page under the cursor so the
+  // next click could land on the wrong control.
+  const existing = document.getElementById('oe-map');
+  if(existing && existing.dataset.src === oe.imageUrl){
+    existing.className = 'oe-map' + (oe.mode ? ' placing' : '');
+    const svgEl = existing.querySelector('svg');
+    svgEl.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svgEl.innerHTML = svg;
+    return;
+  }
+  area.innerHTML =
+    '<div class="oe-map' + (oe.mode ? ' placing' : '') + '" id="oe-map">' +
+      '<img src="' + escapeHtml(oe.imageUrl) + '" alt="Floor plan" draggable="false" style="aspect-ratio:' + w + ' / ' + h + ';" />' +
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">' + svg + '</svg>' +
+    '</div>';
+  const mapEl = document.getElementById('oe-map');
+  mapEl.dataset.src = oe.imageUrl;
+  mapEl.addEventListener('click', onOeMapClick);
+}
+
+// Snaps a click onto any nearby corner of another zone, so neighbouring
+// zones can share an edge exactly instead of overlapping or leaving gaps.
+function snapPoint(pt){
+  const oe = outletEditor;
+  const radius = Math.max(oe.width, oe.height) / 70;
+  let best = null, bestD = radius;
+  oe.zones.forEach((z, i) => {
+    if(i === oe.active) return;
+    z.points.forEach(p => {
+      const d = Math.hypot(p[0] - pt[0], p[1] - pt[1]);
+      if(d < bestD){ bestD = d; best = p; }
+    });
+  });
+  return best ? best.slice() : pt;
+}
+
+function onOeMapClick(e){
+  const oe = outletEditor;
+  if(!oe || !oe.mode) return;
+  const img = document.querySelector('#oe-map img');
+  const rect = img.getBoundingClientRect();
+  let pt = [
+    Math.round(Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1) * oe.width),
+    Math.round(Math.min(Math.max(0, (e.clientY - rect.top) / rect.height), 1) * oe.height)
+  ];
+  const zone = oe.zones[oe.active];
+  if(!zone) return;
+  if(oe.mode === 'pin'){
+    zone.pin = pt;
+    oe.mode = null;
+    setOeHint('Pin placed for <strong>' + escapeHtml(zone.name || 'this zone') + '</strong>.');
+  } else if(oe.mode === 'draw'){
+    const first = oe.draft[0];
+    const closeRadius = Math.max(oe.width, oe.height) / 60;
+    if(first && oe.draft.length >= 3 && Math.hypot(first[0] - pt[0], first[1] - pt[1]) < closeRadius){
+      finishOeDraw();
+      return;
+    }
+    oe.draft.push(snapPoint(pt));
+    showDrawHint();
+  }
+  renderOeMap();
+  renderOeZones();
+}
+
+function showDrawHint(){
+  const oe = outletEditor;
+  setOeHint('Drawing <strong>' + escapeHtml(oe.zones[oe.active].name || 'zone') + '</strong>: click each corner (' + oe.draft.length + ' so far). ' +
+    'Click the first point again or press Finish to close it. Corners snap to neighbouring zones so edges line up. ' +
+    '<button type="button" class="link-btn" id="oe-finish"' + (oe.draft.length < 3 ? ' disabled' : '') + '>Finish</button> · ' +
+    '<button type="button" class="link-btn" id="oe-undo"' + (oe.draft.length ? '' : ' disabled') + '>Undo point</button> · ' +
+    '<button type="button" class="link-btn" id="oe-stop">Cancel</button>');
+  const f = document.getElementById('oe-finish'); if(f) f.addEventListener('click', finishOeDraw);
+  const u = document.getElementById('oe-undo'); if(u) u.addEventListener('click', () => { oe.draft.pop(); showDrawHint(); renderOeMap(); });
+  document.getElementById('oe-stop').addEventListener('click', () => { oe.mode = null; oe.draft = []; setOeHint(''); renderOeMap(); renderOeZones(); });
+}
+
+function finishOeDraw(){
+  const oe = outletEditor;
+  if(oe.draft.length < 3) return;
+  const zone = oe.zones[oe.active];
+  zone.points = oe.draft;
+  oe.draft = [];
+  oe.mode = null;
+  const clash = findZoneOverlap();
+  setOeHint(clash
+    ? '⚠ <strong>' + escapeHtml(clash[0]) + '</strong> overlaps <strong>' + escapeHtml(clash[1]) + '</strong>. Redraw one of them — corners snap to the other zone, so shared edges can line up exactly.'
+    : 'Area saved for <strong>' + escapeHtml(zone.name || 'this zone') + '</strong>.' + (zone.pin ? '' : ' Now place its pin (or leave it — the pin defaults to the middle of the area).'), !!clash);
+  renderOeMap();
+  renderOeZones();
+}
+
+// ---- Overlap check (zones may share edges, but not cover the same floor) ----
+function segCross(a, b, c, d){
+  const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+function distToSegment(p, a, b){
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const t = (dx || dy) ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy))) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+function strictlyInside(p, poly){
+  for(let i = 0; i < poly.length; i++){
+    if(distToSegment(p, poly[i], poly[(i + 1) % poly.length]) < 1.5) return false; // on the edge = shared border
+  }
+  let inside = false;
+  for(let i = 0, j = poly.length - 1; i < poly.length; j = i++){
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if(((yi > p[1]) !== (yj > p[1])) && (p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function polygonsOverlap(A, B){
+  for(let i = 0; i < A.length; i++){
+    for(let j = 0; j < B.length; j++){
+      if(segCross(A[i], A[(i + 1) % A.length], B[j], B[(j + 1) % B.length])) return true;
+    }
+  }
+  return A.some(p => strictlyInside(p, B)) || B.some(p => strictlyInside(p, A)) ||
+    strictlyInside(polygonCentroid(A), B) || strictlyInside(polygonCentroid(B), A);
+}
+
+function findZoneOverlap(){
+  const zs = outletEditor.zones.filter(z => z.points.length >= 3);
+  for(let i = 0; i < zs.length; i++){
+    for(let j = i + 1; j < zs.length; j++){
+      if(polygonsOverlap(zs[i].points, zs[j].points)) return [zs[i].name || 'A zone', zs[j].name || 'another zone'];
+    }
+  }
+  return null;
+}
+
+// ---- Zone list ----
+function renderOeZones(){
+  const oe = outletEditor;
+  const el = document.getElementById('oe-zones');
+  if(!el) return;
+  const hasImage = !!oe.imageUrl;
+  const addBtn = document.getElementById('oe-add-zone');
+  // Built-in outlets keep their built-in zones until a new floor plan is
+  // uploaded (which pre-fills the same zone names to draw).
+  if(oe.builtInLocations && !hasImage){
+    el.innerHTML = '<div class="oe-note">Zones come from the built-in floor plan. Upload a new floor plan above to redraw them.</div>';
+    if(addBtn) addBtn.style.display = 'none';
+    return;
+  }
+  if(addBtn) addBtn.style.display = '';
+  el.innerHTML = oe.zones.length ? oe.zones.map((z, i) =>
+    '<div class="oe-zone-row' + (i === oe.active ? ' active' : '') + '" data-zone-row="' + i + '">' +
+      '<span class="oe-swatch" style="background:' + zoneColor(z.kind) + ';"></span>' +
+      '<input type="text" data-zone-name="' + i + '" value="' + escapeHtml(z.name) + '" placeholder="Zone name, e.g. FOH Zone 1" />' +
+      '<select data-zone-kind="' + i + '">' + ZONE_KINDS.map(k => '<option value="' + k.key + '"' + (k.key === z.kind ? ' selected' : '') + '>' + k.label + '</option>').join('') + '</select>' +
+      (hasImage
+        ? '<button type="button" class="secondary small" data-zone-draw="' + i + '">' + (z.points.length >= 3 ? 'Redraw area' : 'Draw area') + '</button>' +
+          '<button type="button" class="secondary small" data-zone-pin="' + i + '">' + (z.pin ? 'Move pin' : 'Place pin') + '</button>' +
+          '<span class="oe-zone-status">' + (z.points.length >= 3 ? 'area ✓' : 'no area') + ' · ' + (z.pin ? 'pin ✓' : (z.points.length >= 3 ? 'pin: centre' : 'no pin')) + '</span>'
+        : '') +
+      '<button type="button" class="link-btn danger" data-zone-remove="' + i + '">Remove</button>' +
+    '</div>'
+  ).join('') : '<div class="oe-note">No zones yet — add at least one. Zones are the locations people pick on the request form.</div>';
+
+  el.querySelectorAll('[data-zone-row]').forEach(row => row.addEventListener('focusin', () => {
+    const i = Number(row.dataset.zoneRow);
+    if(oe.active !== i && !oe.mode){ oe.active = i; el.querySelectorAll('.oe-zone-row').forEach(r => r.classList.toggle('active', r === row)); renderOeMap(); }
+  }));
+  el.querySelectorAll('[data-zone-name]').forEach(inp => {
+    inp.addEventListener('input', () => { oe.zones[Number(inp.dataset.zoneName)].name = inp.value; });
+    inp.addEventListener('change', renderOeMap);
+  });
+  el.querySelectorAll('[data-zone-kind]').forEach(sel => sel.addEventListener('change', () => {
+    oe.zones[Number(sel.dataset.zoneKind)].kind = sel.value;
+    renderOeMap(); renderOeZones();
+  }));
+  el.querySelectorAll('[data-zone-draw]').forEach(b => b.addEventListener('click', () => {
+    oe.active = Number(b.dataset.zoneDraw);
+    oe.mode = 'draw'; oe.draft = [];
+    showDrawHint(); renderOeMap(); renderOeZones();
+  }));
+  el.querySelectorAll('[data-zone-pin]').forEach(b => b.addEventListener('click', () => {
+    oe.active = Number(b.dataset.zonePin);
+    oe.mode = 'pin'; oe.draft = [];
+    setOeHint('Click on the floor plan where the <strong>' + escapeHtml(oe.zones[oe.active].name || 'zone') + '</strong> pin should go.');
+    renderOeMap(); renderOeZones();
+  }));
+  el.querySelectorAll('[data-zone-remove]').forEach(b => b.addEventListener('click', () => {
+    const i = Number(b.dataset.zoneRemove);
+    const z = oe.zones[i];
+    if((z.name || z.points.length || z.pin) && !confirm('Remove zone "' + (z.name || 'unnamed') + '"? Existing requests keep their location text.')) return;
+    oe.zones.splice(i, 1);
+    oe.active = Math.max(0, Math.min(oe.active, oe.zones.length - 1));
+    oe.mode = null; oe.draft = [];
+    setOeHint('');
+    renderOeMap(); renderOeZones();
+  }));
+}
+
+// ---- Save ----
+async function uploadFloorPlan(blob){
+  const path = 'floorplans/' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.jpg';
+  const res = await fetch(SUPABASE_URL + '/storage/v1/object/request-images/' + path, {
+    method: 'POST',
+    headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'image/jpeg' },
+    body: blob
+  });
+  if(!res.ok){
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Floor plan upload failed.');
+  }
+  return SUPABASE_URL + '/storage/v1/object/public/request-images/' + path;
+}
+
+function randomToken(){
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function saveOutlet(){
+  const oe = outletEditor;
+  const msg = document.getElementById('oe-msg');
+  const btn = document.getElementById('oe-save');
+  const fail = text => { msg.textContent = text; msg.className = 'msg err'; };
+  msg.className = 'msg';
+
+  const name = (oe.name || '').trim();
+  if(!name) return fail('Give the outlet a name.');
+  if(outletAdminRows.some(o => o.outlet_id !== oe.id && (o.outlet_name || '').trim().toUpperCase() === name.toUpperCase())){
+    return fail('There is already an outlet called "' + name + '".');
+  }
+  const zones = oe.zones.map(z => ({ ...z, name: (z.name || '').trim() })).filter(z => z.name || z.points.length || z.pin);
+  if(zones.some(z => !z.name)) return fail('Every zone needs a name.');
+  const seen = new Set();
+  for(const z of zones){
+    const k = z.name.toUpperCase();
+    if(seen.has(k)) return fail('Two zones are both called "' + z.name + '" — zone names must be different.');
+    seen.add(k);
+  }
+  if(oe.imageUrl && !zones.length) return fail('Add at least one zone for the floor plan.');
+  const original = outletAdminRows.find(o => o.outlet_id === oe.id);
+  if(original && oe.builtInLocations && !oe.imageUrl &&
+     name.toUpperCase() !== (original.outlet_name || '').trim().toUpperCase() &&
+     !confirm('This outlet\'s floor plan is built in and found by its name. Renaming it will remove its map until a new floor plan is uploaded here. Rename anyway?')) return;
+  if(oe.mode === 'draw' && oe.draft.length) return fail('Finish (or cancel) the zone you are drawing first.');
+  const clash = findZoneOverlap();
+  if(clash && !confirm('"' + clash[0] + '" overlaps "' + clash[1] + '". Save anyway?')) return;
+  if(oe.tg.enabled && !(oe.tg.chat_def || oe.tg.chat_imp || oe.tg.chat_upd) &&
+     !confirm('Telegram alerts are on but no group ids are filled in, so this outlet\'s alerts will go to the fallback groups. Save anyway?')) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try{
+    let imageUrl = oe.imageBlob ? null : oe.imageUrl;
+    if(oe.imageBlob) imageUrl = await uploadFloorPlan(oe.imageBlob);
+
+    const keepBuiltIn = !!(oe.builtInLocations && !imageUrl);
+    const map_config = (zones.length && !keepBuiltIn) ? {
+      image_url: imageUrl || null,
+      width: oe.width || null,
+      height: oe.height || null,
+      zones: zones.map(z => {
+        const out = { name: z.name, kind: z.kind };
+        if(imageUrl && z.pin) out.pin = z.pin;
+        if(imageUrl && z.points.length >= 3) out.points = z.points;
+        return out;
+      })
+    } : null;
+
+    const body = {
+      outlet_name: name,
+      telegram_enabled: !!oe.tg.enabled,
+      telegram_chat_id_defects: oe.tg.chat_def || null,
+      telegram_thread_id_defects: oe.tg.thr_def || null,
+      telegram_chat_id_improvements: oe.tg.chat_imp || null,
+      telegram_thread_id_improvements: oe.tg.thr_imp || null,
+      telegram_submitter_chat_id: oe.tg.chat_upd || null,
+      telegram_submitter_thread_id: oe.tg.thr_upd || null
+    };
+    // An outlet using its built-in map, with nothing drawn here, keeps
+    // map_config empty so the built-in map stays in charge.
+    if(!keepBuiltIn) body.map_config = map_config;
+    if(!oe.id) body.qr_token = randomToken();
+
+    const res = await fetch(SUPABASE_URL + '/rest/v1/outlets' + (oe.id ? '?outlet_id=eq.' + encodeURIComponent(oe.id) : ''), {
+      method: oe.id ? 'PATCH' : 'POST',
+      headers: {
+        apikey: PUBLISHABLE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => null);
+    if(!res.ok || !Array.isArray(data) || !data.length){
+      const text = JSON.stringify(data || {});
+      if(/map_config|telegram_enabled|column/i.test(text)){
+        throw new Error('The database isn\'t set up for this yet — run supabase/outlet_admin_setup.sql in Supabase → SQL Editor, then try again.');
+      }
+      throw new Error((data && data.message) ||
+        'Could not save — only admins can add or edit outlets. If you are an admin, run supabase/outlet_admin_setup.sql in Supabase first.');
+    }
+    const saved = data[0];
+    rememberOutlets([saved]);
+    if(oe.imageBlob && oe.imageUrl && oe.imageUrl.startsWith('blob:')) URL.revokeObjectURL(oe.imageUrl);
+    closeOutletEditor();
+
+    // Bring every outlet list on the page up to date.
+    await Promise.all([renderOutletAdmin(), refreshStaffOutletPicker()]);
+    outletsList = staffPickerOutlets.slice();
+    if(saved.outlet_id === outletId){
+      outletName = saved.outlet_name;
+      applyStaffMap();
+      if(document.getElementById('sub-map').style.display !== 'none') renderMap();
+    }
+    if(saved.outlet_id === submissionOutletId){
+      submissionOutletName = saved.outlet_name;
+      applySubmissionLocations();
+    }
+    const done = document.getElementById('outlet-admin-msg');
+    done.innerHTML = 'Saved <strong>' + escapeHtml(saved.outlet_name) + '</strong>.' +
+      (saved.qr_token ? ' QR link: <a href="' + escapeHtml(outletQrLink(saved.qr_token)) + '" target="_blank" rel="noopener">' + escapeHtml(outletQrLink(saved.qr_token)) + '</a>' : '');
+    done.className = 'msg ok';
+  } catch(e){
+    fail(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save outlet';
+  }
+}
+
+document.getElementById('outlet-add-btn').addEventListener('click', () => {
+  document.getElementById('outlet-admin-msg').className = 'msg';
+  openOutletEditor(null);
+});
 
 function labelColor(label){
   const palette = ['#B4532A', '#1E3A5F', '#C98A12', '#3C7355', '#2F5582', '#8F3E1C', '#13233A'];
