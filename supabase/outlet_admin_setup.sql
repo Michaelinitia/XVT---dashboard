@@ -23,7 +23,8 @@ alter table public.outlets
 
 -- 2. "Is the current user an admin?" — used by the policies below.
 --    SECURITY DEFINER so it can read profiles regardless of profiles' RLS.
-create or replace function public.is_admin()
+--    Prefixed xvt_ so it can't clash with an existing is_admin() function.
+create or replace function public.xvt_is_admin()
 returns boolean
 language sql
 security definer
@@ -48,23 +49,26 @@ drop policy if exists "admins can add outlets" on public.outlets;
 create policy "admins can add outlets"
   on public.outlets for insert
   to authenticated
-  with check (public.is_admin());
+  with check (public.xvt_is_admin());
 
 drop policy if exists "admins can edit outlets" on public.outlets;
 create policy "admins can edit outlets"
   on public.outlets for update
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.xvt_is_admin())
+  with check (public.xvt_is_admin());
+
+commit;
 
 -- 4. Memir TRX, if it isn't there yet (Telegram off until its groups exist).
+--    Kept outside the block above so that, if this one insert fails, the
+--    setup above is still saved — Memir TRX can then be added from
+--    Team & Account → Outlets instead.
 insert into public.outlets (outlet_name, qr_token, telegram_enabled)
 select 'Memir TRX', replace(gen_random_uuid()::text, '-', ''), false
 where not exists (
   select 1 from public.outlets where upper(trim(outlet_name)) = 'MEMIR TRX'
 );
-
-commit;
 
 -- 5. Check: every outlet and its QR link.
 select outlet_name,
