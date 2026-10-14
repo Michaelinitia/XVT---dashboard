@@ -17,9 +17,13 @@ begin;
 --      outlet uses its built-in map (KLGCC / MODU TRX / Memir TRX) if any.
 --    telegram_enabled: per-outlet on/off switch for Telegram alerts
 --      (existing outlets default to ON, so nothing changes for them).
+--    telegram_use_fallback: when a message type has no group set for this
+--      outlet, send it to the shared fallback group (true, the existing
+--      behaviour) or don't send it at all (false).
 alter table public.outlets
   add column if not exists map_config jsonb,
-  add column if not exists telegram_enabled boolean not null default true;
+  add column if not exists telegram_enabled boolean not null default true,
+  add column if not exists telegram_use_fallback boolean not null default true;
 
 -- 2. "Is the current user an admin?" — used by the policies below.
 --    SECURITY DEFINER so it can read profiles regardless of profiles' RLS.

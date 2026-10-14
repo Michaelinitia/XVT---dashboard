@@ -3107,7 +3107,9 @@ async function renderOutletAdmin(){
       const mapStatus = buildMapConfig(o.map_config) ? (cfg.noMap ? 'Zones only (no floor plan)' : 'Custom floor plan')
         : (cfg.noMap ? 'No floor plan' : 'Built-in floor plan');
       const tg = o.telegram_enabled === false ? 'Telegram off'
-        : (outletHasTelegramGroups(o) ? 'Telegram on' : 'Telegram on (fallback groups)');
+        : (outletHasTelegramGroups(o)
+            ? 'Telegram on' + (o.telegram_use_fallback === false ? '' : ' (+ fallback groups)')
+            : (o.telegram_use_fallback === false ? 'Telegram on (no groups set — nothing sent)' : 'Telegram on (fallback groups)'));
       const qr = o.qr_token ? outletQrLink(o.qr_token) : '';
       return '<div class="outlet-row">' +
         '<div class="outlet-row-main">' +
@@ -3149,6 +3151,12 @@ function openOutletEditor(row){
     pdfFile: null, pdfPages: 0, pdfPage: 1,
     tg: {
       enabled: row ? row.telegram_enabled !== false : false,
+      // Whether message types without their own group go to the shared
+      // fallback groups. Existing outlets keep doing that; new outlets
+      // default to sending nothing rather than posting in another outlet's
+      // group. Only offered once the column exists (see save()).
+      hasFallbackCol: !row || 'telegram_use_fallback' in row,
+      useFallback: row ? row.telegram_use_fallback !== false : false,
       chat_def: (row && row.telegram_chat_id_defects) || '', thr_def: (row && row.telegram_thread_id_defects) || '',
       chat_imp: (row && row.telegram_chat_id_improvements) || '', thr_imp: (row && row.telegram_thread_id_improvements) || '',
       chat_upd: (row && row.telegram_submitter_chat_id) || '', thr_upd: (row && row.telegram_submitter_thread_id) || ''
@@ -3200,6 +3208,10 @@ function renderOutletEditor(){
         '(e.g. -100123…) and, for topics, <code>message_thread_id</code>. Leave alerts off until the groups are ready — ' +
         'nothing is sent for this outlet while they\'re off.</div>' +
       '<label class="inline-check" style="margin-top:10px;"><input type="checkbox" id="oe-tg-enabled"' + (oe.tg.enabled ? ' checked' : '') + ' /> Send Telegram alerts for this outlet</label>' +
+      (oe.tg.hasFallbackCol
+        ? '<label class="inline-check" style="margin-top:6px;"><input type="checkbox" id="oe-tg-fallback"' + (oe.tg.useFallback ? ' checked' : '') + ' /> ' +
+            'If a message type has no group below, send it to the shared fallback group (otherwise it isn\'t sent)</label>'
+        : '') +
       '<div class="oe-tg-grid">' +
         tgField('chat_def', 'New defects — group chat id', '-100…') + tgField('thr_def', 'Topic id (optional)', '') +
         tgField('chat_imp', 'New improvements — group chat id', '-100…') + tgField('thr_imp', 'Topic id (optional)', '') +
@@ -3227,6 +3239,8 @@ function renderOutletEditor(){
   });
   el.querySelectorAll('[data-tg]').forEach(i => i.addEventListener('input', () => { oe.tg[i.dataset.tg] = i.value.trim(); }));
   document.getElementById('oe-tg-enabled').addEventListener('change', e => { oe.tg.enabled = e.target.checked; });
+  const fb = document.getElementById('oe-tg-fallback');
+  if(fb) fb.addEventListener('change', e => { oe.tg.useFallback = e.target.checked; });
   document.getElementById('oe-save').addEventListener('click', saveOutlet);
   document.getElementById('oe-cancel').addEventListener('click', closeOutletEditor);
 
@@ -3662,7 +3676,7 @@ async function saveOutlet(){
   if(oe.mode === 'draw' && oe.draft.length) return fail('Finish (or cancel) the zone you are drawing first.');
   const clash = findZoneOverlap();
   if(clash && !confirm('"' + clash[0] + '" overlaps "' + clash[1] + '". Save anyway?')) return;
-  if(oe.tg.enabled && !(oe.tg.chat_def || oe.tg.chat_imp || oe.tg.chat_upd) &&
+  if(oe.tg.enabled && !(oe.tg.chat_def || oe.tg.chat_imp || oe.tg.chat_upd) && (oe.tg.useFallback || !oe.tg.hasFallbackCol) &&
      !confirm('Telegram alerts are on but no group ids are filled in, so this outlet\'s alerts will go to the fallback groups. Save anyway?')) return;
 
   btn.disabled = true;
@@ -3687,6 +3701,7 @@ async function saveOutlet(){
     const body = {
       outlet_name: name,
       telegram_enabled: !!oe.tg.enabled,
+      ...(oe.tg.hasFallbackCol ? { telegram_use_fallback: !!oe.tg.useFallback } : {}),
       telegram_chat_id_defects: oe.tg.chat_def || null,
       telegram_thread_id_defects: oe.tg.thr_def || null,
       telegram_chat_id_improvements: oe.tg.chat_imp || null,
