@@ -1277,6 +1277,47 @@ async function tryRestoreSession(){
   await activateStaffSession(saved);
 }
 
+// A "Send password reset email" click (Team → that admin feature) lands
+// the user back here on the link from their inbox. Supabase appends the
+// one-time access token as a URL hash fragment rather than a query
+// string — #access_token=...&type=recovery&... — so it never gets sent
+// to a server or logged anywhere. That token is a real, usable access
+// token for the account (just like a normal login's), so the simplest
+// way to let them actually set a new password is to sign them in with
+// it the same way a password login would, then drop them straight on
+// the Settings tab where the password field already lives.
+async function tryHandleRecoveryRedirect(){
+  const hash = window.location.hash;
+  if(!hash || hash.indexOf('type=recovery') === -1) return false;
+  const params = new URLSearchParams(hash.slice(1));
+  const access_token = params.get('access_token');
+  const refresh_token = params.get('refresh_token');
+  if(!access_token) return false;
+
+  // Clear the token out of the URL immediately — before anything else can
+  // fail — so a refresh or a shared/forwarded link can't replay it.
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+
+  const userRes = await fetch(SUPABASE_URL + '/auth/v1/user', {
+    headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + access_token }
+  });
+  if(!userRes.ok) return false;
+  const user = await userRes.json();
+
+  const data = { access_token, refresh_token, token_type: 'bearer', user };
+  saveSessionToStorage(data);
+  await activateStaffSession(data);
+
+  const settingsBtn = document.querySelector('#main-subtabs [data-sub="settings"]');
+  if(settingsBtn) settingsBtn.click();
+  const pwMsg = document.getElementById('pw-msg');
+  if(pwMsg){
+    pwMsg.textContent = 'Set a new password below to finish resetting it.';
+    pwMsg.className = 'msg info';
+  }
+  return true;
+}
+
 document.getElementById('l-submit').addEventListener('click', async () => {
   const msg = document.getElementById('l-msg');
   msg.className = 'msg';
@@ -2992,7 +3033,18 @@ async function loadPermissionManageList(){
       '<div class="check-row">' + checksHtml + '</div>' +
       '<button class="secondary" data-save-perm="' + p.user_id + '">Save</button>' +
       (isSelf ? '' : ' <button class="secondary" data-delete-perm="' + p.user_id + '" style="color:var(--urgent);border-color:var(--urgent);">Delete</button>') +
-      '<span class="msg" style="display:inline-block;margin-left:8px;"></span>';
+      '<span class="msg" style="display:inline-block;margin-left:8px;"></span>' +
+      // Profiles don't store email (it lives only in Supabase Auth, which
+      // the client can't query with the publishable key), so the admin
+      // types it in here each time rather than it being looked up. Hits
+      // the same public /auth/v1/recover endpoint a "Forgot password"
+      // link on a login page would use — it emails that address a reset
+      // link if an account exists for it, never a password directly.
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);">' +
+        '<input type="email" data-reset-email placeholder="their login email" style="width:220px;display:inline-block;" /> ' +
+        '<button class="secondary" data-reset-pw>Send password reset email</button>' +
+        '<span class="msg reset-msg" style="display:inline-block;margin-left:8px;"></span>' +
+      '</div>';
     list.appendChild(row);
     row.querySelector('[data-save-perm]').addEventListener('click', async () => {
       const statusEl = row.querySelector('.msg');
@@ -3054,6 +3106,30 @@ async function loadPermissionManageList(){
         }
       });
     }
+    row.querySelector('[data-reset-pw]').addEventListener('click', async () => {
+      const statusEl = row.querySelector('.reset-msg');
+      const email = row.querySelector('[data-reset-email]').value.trim();
+      if(!email){
+        statusEl.textContent = 'Enter their login email first.';
+        statusEl.className = 'msg err';
+        return;
+      }
+      statusEl.textContent = 'Sending…';
+      statusEl.className = 'msg';
+      const recoverRes = await fetch(SUPABASE_URL + '/auth/v1/recover', {
+        method: 'POST',
+        headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if(recoverRes.ok){
+        statusEl.textContent = 'Reset email sent to ' + email + '.';
+        statusEl.className = 'msg ok';
+      } else {
+        const err = await recoverRes.json().catch(() => ({}));
+        statusEl.textContent = 'Could not send reset email: ' + (err.msg || err.error_description || recoverRes.statusText);
+        statusEl.className = 'msg err';
+      }
+    });
   });
 }
 
@@ -3780,7 +3856,8 @@ function labelColor(label){
 // outlet picker even when the QR/link param is right there in the URL.
 (async () => {
   await resolveOutlet();
-  await tryRestoreSession();
+  const recovered = await tryHandleRecoveryRedirect();
+  if(!recovered) await tryRestoreSession();
 })();
 </script>
 </body>
