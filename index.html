@@ -1218,16 +1218,17 @@ document.getElementById('i-submit').addEventListener('click', async () => {
   }
 });
 
-// Keeps someone logged in across a page refresh/reopen for up to an hour
-// after they last logged in, using localStorage — this is a real,
-// standalone hosted web page (not a Claude.ai artifact preview), so
-// browser storage is safe to use here. If the underlying Supabase access
-// token happens to expire before that hour is up, the first API call
-// that fails will naturally fall back to the login screen rather than
-// silently breaking (Supabase's default token lifetime is itself
-// commonly around an hour, so in practice these usually line up).
+// "Remember me": once logged in, stay logged in — on this device, in this
+// browser — until an explicit Log out, or until the account signs in
+// somewhere else (which, with Supabase's "single session per user" auth
+// setting turned on, silently invalidates this device's refresh token;
+// see forceLogout() below for how that's detected and surfaced). There is
+// no time-based cutoff here any more: the access token itself is
+// short-lived (usually ~1hr, set by Supabase), but refresh_token is used
+// to silently mint a new one, both proactively (scheduleTokenRefresh())
+// and whenever a stored session is restored after being away a while.
 const SESSION_STORAGE_KEY = 'xvt_session_v1';
-const SESSION_MAX_AGE_MS = 60 * 60 * 1000;
+let tokenRefreshTimer = null;
 
 function saveSessionToStorage(data){
   try{
@@ -1240,11 +1241,7 @@ function loadSessionFromStorage(){
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
     if(!raw) return null;
     const parsed = JSON.parse(raw);
-    if(!parsed || !parsed.session || !parsed.savedAt) return null;
-    if(Date.now() - parsed.savedAt > SESSION_MAX_AGE_MS){
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-      return null;
-    }
+    if(!parsed || !parsed.session) return null;
     return parsed.session;
   } catch(e){
     return null;
@@ -1255,15 +1252,60 @@ function clearStoredSession(){
   try{ localStorage.removeItem(SESSION_STORAGE_KEY); } catch(e){}
 }
 
+// Exchanges a refresh_token for a brand-new access_token (and, since
+// Supabase rotates refresh tokens on every use, a new refresh_token too —
+// the old one stops working immediately after this). Returns the fresh
+// token data on success, or null on any failure (network error, or the
+// refresh_token itself being invalid/expired/revoked — which is exactly
+// what happens to every *other* device's refresh_token the moment the
+// account logs in somewhere new, if single-session-per-user is on).
+async function refreshAccessToken(sess){
+  if(!sess || !sess.refresh_token) return null;
+  const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: sess.refresh_token })
+  }).catch(() => null);
+  if(!res || !res.ok) return null;
+  const data = await res.json().catch(() => null);
+  if(!data || !data.access_token) return null;
+  // The refresh response carries a new access/refresh token pair but not
+  // always a full user object — keep whatever user info we already had.
+  return { ...sess, ...data, user: data.user || sess.user };
+}
+
+// Refreshes the access token shortly before it expires, then reschedules
+// itself — keeping a tab that's left open indefinitely logged in without
+// the user ever seeing a login prompt. expires_in is in seconds; refresh
+// 60s early (clamped so a short-lived token still gets at least one
+// scheduled attempt) rather than cutting it exactly at expiry.
+function scheduleTokenRefresh(data){
+  if(tokenRefreshTimer) clearTimeout(tokenRefreshTimer);
+  const expiresInMs = (data.expires_in || 3600) * 1000;
+  const delay = Math.max(expiresInMs - 60000, 10000);
+  tokenRefreshTimer = setTimeout(async () => {
+    const fresh = await refreshAccessToken(session);
+    if(!fresh){
+      forceLogout('You were signed out — this usually means the account logged in somewhere else, or the session expired. Log in again to continue.');
+      return;
+    }
+    session = fresh;
+    saveSessionToStorage(fresh);
+    scheduleTokenRefresh(fresh);
+  }, delay);
+}
+
 // Shared by a fresh login and a restored-from-storage session so both
 // paths end up in exactly the same state.
 async function activateStaffSession(data){
   session = data;
+  saveSessionToStorage(data);
   document.getElementById('login-card').style.display = 'none';
   document.getElementById('staff-area').style.display = 'block';
   document.getElementById('logout').style.display = '';
   document.getElementById('mobile-menu-toggle').style.display = '';
   document.getElementById('who-email').textContent = data.user.email;
+  scheduleTokenRefresh(data);
   await loadOwnPermissions();
   await initStaffOutletContext();
   await loadAllRequests();
@@ -1274,8 +1316,70 @@ async function activateStaffSession(data){
 async function tryRestoreSession(){
   const saved = loadSessionFromStorage();
   if(!saved) return;
-  await activateStaffSession(saved);
+  // Always refresh on restore rather than trusting the stored access
+  // token: it may well have expired while the tab/browser was closed,
+  // and — since refresh tokens rotate on every use — this also replaces
+  // the stored refresh_token with the current valid one.
+  const fresh = await refreshAccessToken(saved);
+  if(!fresh){
+    clearStoredSession();
+    return;
+  }
+  await activateStaffSession(fresh);
 }
+
+// Ends the session the same way a manual Log out does, but also clears
+// the refresh-retry timer and — when `message` is given — leaves it on
+// the login screen so the person understands why they're suddenly looking
+// at a login form instead of the dashboard they left open.
+function forceLogout(message){
+  if(tokenRefreshTimer) clearTimeout(tokenRefreshTimer);
+  tokenRefreshTimer = null;
+  stopLiveRefresh();
+  session = null;
+  clearStoredSession();
+  currentIsAdmin = false;
+  currentPermissions = [];
+  allStaffRequests = [];
+  outletId = submissionOutletId;
+  outletName = submissionOutletName;
+  document.getElementById('login-card').style.display = 'block';
+  document.getElementById('staff-area').style.display = 'none';
+  document.getElementById('logout').style.display = 'none';
+  document.getElementById('mobile-menu-toggle').style.display = 'none';
+  document.getElementById('l-password').value = '';
+  document.getElementById('staff-outlet-picker').style.display = 'none';
+  if(message){
+    const msg = document.getElementById('l-msg');
+    msg.textContent = message;
+    msg.className = 'msg err';
+  }
+}
+
+// Catches a revoked/expired session the moment any API call hits it,
+// rather than waiting for the next scheduled refresh (scheduleTokenRefresh
+// runs at most once an hour) — important for "logged in elsewhere" kicking
+// this device out promptly instead of leaving it looking live for up to an
+// hour while every click silently 401s. Only acts on calls that were
+// actually authenticated as the current session (never on the public
+// anon-key-only calls the submission forms make, and never on the
+// recovery-link token check, which deliberately runs before any session
+// exists).
+let forcingLogoutFromAuth = false;
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function(input, init){
+  const res = await _origFetch(input, init);
+  if(res.status === 401 && session && !forcingLogoutFromAuth){
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const authHeader = init && init.headers && (init.headers.Authorization || init.headers.authorization);
+    if(url.indexOf(SUPABASE_URL) === 0 && authHeader === 'Bearer ' + session.access_token){
+      forcingLogoutFromAuth = true;
+      forceLogout('You were signed out — this usually means the account logged in somewhere else, or the session expired. Log in again to continue.');
+      setTimeout(() => { forcingLogoutFromAuth = false; }, 2000);
+    }
+  }
+  return res;
+};
 
 // A "Send password reset email" click (Team → that admin feature) lands
 // the user back here on the link from their inbox. Supabase appends the
@@ -1300,8 +1404,8 @@ async function tryHandleRecoveryRedirect(){
 
   const userRes = await fetch(SUPABASE_URL + '/auth/v1/user', {
     headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + access_token }
-  });
-  if(!userRes.ok) return false;
+  }).catch(() => null);
+  if(!userRes || !userRes.ok) return false;
   const user = await userRes.json();
 
   const data = { access_token, refresh_token, token_type: 'bearer', user };
@@ -1332,8 +1436,13 @@ document.getElementById('l-submit').addEventListener('click', async () => {
     method: 'POST',
     headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
-  });
-  const data = await res.json();
+  }).catch(() => null);
+  if(!res){
+    msg.textContent = 'Could not reach the server — check your connection and try again.';
+    msg.className = 'msg err';
+    return;
+  }
+  const data = await res.json().catch(() => ({}));
   if(!res.ok){
     msg.textContent = data.error_description || data.msg || 'Login failed.';
     msg.className = 'msg err';
@@ -1396,35 +1505,34 @@ async function loadOwnPermissions(){
     const res = await fetch(SUPABASE_URL + '/rest/v1/profiles?select=is_admin,permission_labels&user_id=eq.' + session.user.id, {
       headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
     });
+    // A 401 here can trigger the global fetch interceptor's forceLogout()
+    // synchronously (e.g. the account just signed in elsewhere), which
+    // clears `session` before this function resumes — bail out rather
+    // than crash on session.user below.
+    if(!session) return;
     const data = res.ok ? await res.json() : [];
     if(data[0]){
       currentIsAdmin = !!data[0].is_admin;
       currentPermissions = data[0].permission_labels || [];
     }
   } catch(e){ /* leave defaults */ }
+  if(!session) return;
   document.getElementById('admin-settings-section').style.display = currentIsAdmin ? 'block' : 'none';
   document.getElementById('history-tab-btn').style.display = currentIsAdmin ? '' : 'none';
   document.getElementById('pw-email').textContent = session.user.email;
 }
 
 document.getElementById('logout').addEventListener('click', () => {
-  stopLiveRefresh();
-  session = null;
-  clearStoredSession();
-  currentIsAdmin = false;
-  currentPermissions = [];
-  allStaffRequests = [];
-  // Reset the staff viewing context back to whatever the QR/link resolved
-  // to, so the next person logging in on this device doesn't inherit
-  // whichever outlet the previous staff member happened to be browsing.
-  outletId = submissionOutletId;
-  outletName = submissionOutletName;
-  document.getElementById('login-card').style.display = 'block';
-  document.getElementById('staff-area').style.display = 'none';
-  document.getElementById('logout').style.display = 'none';
-  document.getElementById('mobile-menu-toggle').style.display = 'none';
-  document.getElementById('l-password').value = '';
-  document.getElementById('staff-outlet-picker').style.display = 'none';
+  // Best-effort: revokes the refresh token server-side so it can't be
+  // silently reused later. Fired without waiting on it — the local
+  // logout below must happen immediately either way.
+  if(session && session.access_token){
+    fetch(SUPABASE_URL + '/auth/v1/logout', {
+      method: 'POST',
+      headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
+    }).catch(() => {});
+  }
+  forceLogout();
 });
 
 const FILTERS = ['all','pending','in_progress','resolved'];
@@ -1567,10 +1675,10 @@ async function loadAdminOutletsData(){
     fetchOutletRows('', true),
     fetch(SUPABASE_URL + '/rest/v1/requests?select=*,profiles(full_name)&order=submitted_at.desc', {
       headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
-    })
+    }).catch(() => null)
   ]);
   outletsList = outletRows;
-  adminAllRequests = allRes.ok ? await allRes.json() : [];
+  adminAllRequests = (allRes && allRes.ok) ? await allRes.json() : [];
 }
 
 const URGENCY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -1885,19 +1993,25 @@ async function setEtaDate(request_id, dateStr){
     return;
   }
 
-  const res = await fetch(
-    SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id + '&assigned_to=eq.' + session.user.id,
-    {
-      method: 'PATCH',
-      headers: {
-        apikey: PUBLISHABLE_KEY,
-        Authorization: 'Bearer ' + session.access_token,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation'
-      },
-      body: JSON.stringify({ eta_date: dateStr })
-    }
-  );
+  let res;
+  try{
+    res = await fetch(
+      SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id + '&assigned_to=eq.' + session.user.id,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: PUBLISHABLE_KEY,
+          Authorization: 'Bearer ' + session.access_token,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify({ eta_date: dateStr })
+      }
+    );
+  } catch(e){
+    alert('Could not set ETA — check your connection and try again.');
+    return;
+  }
 
   if(!res.ok){
     alert('Could not set ETA.');
@@ -1942,16 +2056,22 @@ async function reopenRequest(request_id, context){
   if(!confirm('Reopen this task? It will move back to "In Progress" for the same claimant.')){
     return;
   }
-  const res = await fetch(SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id, {
-    method: 'PATCH',
-    headers: {
-      apikey: PUBLISHABLE_KEY,
-      Authorization: 'Bearer ' + session.access_token,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation'
-    },
-    body: JSON.stringify({ status: 'in_progress', resolved_at: null, resolution_image_url: null })
-  });
+  let res;
+  try{
+    res = await fetch(SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id, {
+      method: 'PATCH',
+      headers: {
+        apikey: PUBLISHABLE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify({ status: 'in_progress', resolved_at: null, resolution_image_url: null })
+    });
+  } catch(e){
+    alert('Could not reopen this task — check your connection and try again.');
+    return;
+  }
   if(!res.ok){
     alert('Could not reopen this task.');
     return;
@@ -2020,16 +2140,22 @@ async function loadAndRenderComments(request_id, containerId){
 
 async function submitComment(request_id, text){
   if(!text || !text.trim()) return;
-  const res = await fetch(SUPABASE_URL + '/rest/v1/request_comments', {
-    method: 'POST',
-    headers: {
-      apikey: PUBLISHABLE_KEY,
-      Authorization: 'Bearer ' + session.access_token,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal'
-    },
-    body: JSON.stringify({ request_id, user_id: session.user.id, comment_text: text.trim() })
-  });
+  let res;
+  try{
+    res = await fetch(SUPABASE_URL + '/rest/v1/request_comments', {
+      method: 'POST',
+      headers: {
+        apikey: PUBLISHABLE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({ request_id, user_id: session.user.id, comment_text: text.trim() })
+    });
+  } catch(e){
+    alert('Could not add comment — check your connection and try again.');
+    return;
+  }
   if(res.ok){
     const input = document.getElementById('comment-input');
     if(input) input.value = '';
@@ -2205,11 +2331,17 @@ async function claimRequest(request_id){
     alert('Only a user with the purchaser permission can claim this request.');
     return;
   }
-  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/claim_request', {
-    method: 'POST',
-    headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_request_id: request_id, p_user_id: session.user.id })
-  });
+  let res;
+  try{
+    res = await fetch(SUPABASE_URL + '/rest/v1/rpc/claim_request', {
+      method: 'POST',
+      headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_request_id: request_id, p_user_id: session.user.id })
+    });
+  } catch(e){
+    alert('Could not claim — check your connection and try again.');
+    return;
+  }
   if(res.ok){
     await loadAllRequests();
     renderQueue();
@@ -2252,19 +2384,25 @@ async function resolveRequest(request_id, resolutionImageFiles){
     return;
   }
 
-  const res = await fetch(
-    SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id + '&assigned_to=eq.' + session.user.id,
-    {
-      method: 'PATCH',
-      headers: {
-        apikey: PUBLISHABLE_KEY,
-        Authorization: 'Bearer ' + session.access_token,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation'
-      },
-      body: JSON.stringify(body)
-    }
-  );
+  let res;
+  try{
+    res = await fetch(
+      SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id + '&assigned_to=eq.' + session.user.id,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: PUBLISHABLE_KEY,
+          Authorization: 'Bearer ' + session.access_token,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify(body)
+      }
+    );
+  } catch(e){
+    alert('The photo uploaded, but marking the task resolved failed — check your connection and try again.');
+    return;
+  }
   if(res.ok){
     const updated = await res.json().catch(() => []);
     if(!updated.length){
@@ -2840,10 +2978,10 @@ async function renderTeam(){
   list.innerHTML = '<div class="empty">Loading team…</div>';
   const res = await fetch(SUPABASE_URL + '/rest/v1/profiles?select=user_id,full_name,permission_labels,is_admin&order=full_name.asc', {
     headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
-  });
-  const data = res.ok ? await res.json() : [];
+  }).catch(() => null);
+  const data = (res && res.ok) ? await res.json() : [];
   if(!data.length){
-    list.innerHTML = '<div class="empty">No staff profiles found.</div>';
+    list.innerHTML = '<div class="empty">' + (res ? 'No staff profiles found.' : 'Could not load the team — check your connection and reload.') + '</div>';
     return;
   }
   list.innerHTML = data.map(p => {
@@ -2894,7 +3032,12 @@ document.getElementById('acct-submit').addEventListener('click', async () => {
     method: 'POST',
     headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
-  });
+  }).catch(() => null);
+  if(!signupRes){
+    msg.textContent = 'Could not create login — check your connection and try again.';
+    msg.className = 'msg err';
+    return;
+  }
   const signupData = await signupRes.json().catch(() => ({}));
   if(!signupRes.ok){
     msg.textContent = 'Could not create login: ' + (signupData.msg || signupData.error_description || signupRes.statusText);
@@ -2917,9 +3060,12 @@ document.getElementById('acct-submit').addEventListener('click', async () => {
       Prefer: 'resolution=merge-duplicates'
     },
     body: JSON.stringify({ user_id: newUserId, full_name, permission_labels, is_admin, telegram_username })
-  });
+  }).catch(() => null);
 
-  if(profileRes.ok){
+  if(!profileRes){
+    msg.textContent = 'Login created, but permissions could not be saved — check your connection, then set them from the list below.';
+    msg.className = 'msg err';
+  } else if(profileRes.ok){
     const confirmNote = signupData.confirmation_sent_at ? ' They must confirm their email before logging in.' : '';
     msg.textContent = 'Account created for ' + full_name + '.' + confirmNote;
     msg.className = 'msg ok';
@@ -2969,9 +3115,12 @@ document.getElementById('pw-submit').addEventListener('click', async () => {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ password: pw1 })
-  });
+  }).catch(() => null);
 
-  if(res.ok){
+  if(!res){
+    msg.textContent = 'Could not update password — check your connection and try again.';
+    msg.className = 'msg err';
+  } else if(res.ok){
     msg.textContent = 'Password updated.';
     msg.className = 'msg ok';
     document.getElementById('pw-new').value = '';
@@ -3010,10 +3159,10 @@ async function loadPermissionManageList(){
   list.innerHTML = '<div class="empty">Loading team…</div>';
   const res = await fetch(SUPABASE_URL + '/rest/v1/profiles?select=user_id,full_name,permission_labels,is_admin,telegram_username&order=full_name.asc', {
     headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token }
-  });
-  const data = res.ok ? await res.json() : [];
+  }).catch(() => null);
+  const data = (res && res.ok) ? await res.json() : [];
   if(!data.length){
-    list.innerHTML = '<div class="empty">No staff profiles found.</div>';
+    list.innerHTML = '<div class="empty">' + (res ? 'No staff profiles found.' : 'Could not load the team — check your connection and reload.') + '</div>';
     return;
   }
   list.innerHTML = '';
@@ -3060,8 +3209,11 @@ async function loadPermissionManageList(){
           Prefer: 'return=minimal'
         },
         body: JSON.stringify({ permission_labels: newLabels, is_admin: newIsAdmin, telegram_username: newTelegram })
-      });
-      if(saveRes.ok){
+      }).catch(() => null);
+      if(!saveRes){
+        statusEl.textContent = 'Could not save — check your connection and try again.';
+        statusEl.className = 'msg err';
+      } else if(saveRes.ok){
         statusEl.textContent = 'Saved.';
         statusEl.className = 'msg ok';
       } else {
@@ -3096,8 +3248,11 @@ async function loadPermissionManageList(){
             Authorization: 'Bearer ' + session.access_token,
             Prefer: 'return=minimal'
           }
-        });
-        if(delRes.ok){
+        }).catch(() => null);
+        if(!delRes){
+          statusEl.textContent = 'Could not delete — check your connection and try again.';
+          statusEl.className = 'msg err';
+        } else if(delRes.ok){
           row.remove();
         } else {
           const err = await delRes.json().catch(() => ({}));
@@ -3120,8 +3275,11 @@ async function loadPermissionManageList(){
         method: 'POST',
         headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
-      });
-      if(recoverRes.ok){
+      }).catch(() => null);
+      if(!recoverRes){
+        statusEl.textContent = 'Could not send reset email — check your connection and try again.';
+        statusEl.className = 'msg err';
+      } else if(recoverRes.ok){
         statusEl.textContent = 'Reset email sent to ' + email + '.';
         statusEl.className = 'msg ok';
       } else {
