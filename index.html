@@ -869,7 +869,7 @@ async function resolveOutlet(){
   if(urlOutlet){
     outletId = urlOutlet;
   } else if(urlQr){
-    const data = await fetchOutletRows('qr_token=eq.' + encodeURIComponent(urlQr), false);
+    const data = await fetchOutletRows(qrTokenLookupFilter(urlQr), false);
     if(data && data[0]) outletId = data[0].outlet_id;
   }
 
@@ -3156,6 +3156,20 @@ function outletQrLink(token){
   return location.origin + location.pathname + '?qr=' + encodeURIComponent(token);
 }
 
+// An outlet can now have several QR codes (e.g. one per entrance/washroom)
+// that all resolve to the same outlet. qr_tokens (an array) is the
+// current source of truth; the original qr_token column is still checked
+// too so outlets saved before multi-QR support keep working without a
+// migration having to touch their data.
+function outletQrTokens(o){
+  if(o && Array.isArray(o.qr_tokens) && o.qr_tokens.length) return o.qr_tokens;
+  return (o && o.qr_token) ? [o.qr_token] : [];
+}
+
+function qrTokenLookupFilter(token){
+  return 'or=' + encodeURIComponent('(qr_token.eq.' + token + ',qr_tokens.cs.{' + token + '})');
+}
+
 function outletHasTelegramGroups(o){
   return !!(o.telegram_chat_id_defects || o.telegram_chat_id_improvements || o.telegram_submitter_chat_id);
 }
@@ -3186,12 +3200,16 @@ async function renderOutletAdmin(){
         : (outletHasTelegramGroups(o)
             ? 'Telegram on' + (o.telegram_use_fallback === false ? '' : ' (+ fallback groups)')
             : (o.telegram_use_fallback === false ? 'Telegram on (no groups set — nothing sent)' : 'Telegram on (fallback groups)'));
-      const qr = o.qr_token ? outletQrLink(o.qr_token) : '';
+      const qrLinks = outletQrTokens(o).map((t, i) => {
+        const link = outletQrLink(t);
+        return '<div class="outlet-meta">QR ' + (i + 1) + ': <a href="' + escapeHtml(link) + '" target="_blank" rel="noopener">link</a> · ' +
+          '<button type="button" class="link-btn" data-copy-qr="' + escapeHtml(link) + '">Copy</button></div>';
+      }).join('');
       return '<div class="outlet-row">' +
         '<div class="outlet-row-main">' +
           '<div class="team-name" style="margin-bottom:4px;">' + escapeHtml(o.outlet_name) + '</div>' +
           '<div class="outlet-meta">' + escapeHtml(mapStatus) + ' · ' + cfg.locations.length + ' zone' + (cfg.locations.length === 1 ? '' : 's') + ' · ' + escapeHtml(tg) + '</div>' +
-          (qr ? '<div class="outlet-meta"><a href="' + escapeHtml(qr) + '" target="_blank" rel="noopener">QR link</a> · <button type="button" class="link-btn" data-copy-qr="' + escapeHtml(qr) + '">Copy</button></div>' : '') +
+          qrLinks +
         '</div>' +
         '<button class="secondary" data-edit-outlet="' + escapeHtml(o.outlet_id) + '">Edit</button>' +
       '</div>';
@@ -3225,6 +3243,10 @@ function openOutletEditor(row){
     mode: null,          // 'pin' | 'draw'
     draft: [],
     pdfFile: null, pdfPages: 0, pdfPage: 1,
+    // Every QR code (one per physical sticker — entrance, washroom, etc.)
+    // that should resolve to this outlet. A brand-new outlet gets its
+    // first one generated on save; more can be added here afterwards.
+    qrTokens: row ? outletQrTokens(row).slice() : [],
     tg: {
       enabled: row ? row.telegram_enabled !== false : false,
       // Whether message types without their own group go to the shared
@@ -3262,6 +3284,11 @@ function renderOutletEditor(){
     '<h3 class="section-heading" style="font-size:14px;">' + (oe.id ? 'Edit outlet' : 'Add outlet') + '</h3>' +
     '<label for="oe-name">Outlet name</label>' +
     '<input type="text" id="oe-name" value="' + escapeHtml(oe.name) + '" placeholder="e.g. Memir TRX" />' +
+
+    '<label>QR codes</label>' +
+    '<div class="oe-note">Each one is a separate sticker/poster that reports into this same outlet — add another for a second entrance, washroom, etc.</div>' +
+    '<div id="oe-qr-list"></div>' +
+    '<button type="button" class="secondary" id="oe-add-qr" style="margin-top:8px;">+ Add QR code</button>' +
 
     '<label for="oe-file">Floor plan (image or PDF)</label>' +
     '<input type="file" id="oe-file" accept="image/*,application/pdf" />' +
@@ -3313,6 +3340,10 @@ function renderOutletEditor(){
     const inputs = document.querySelectorAll('#oe-zones [data-zone-name]');
     if(inputs.length) inputs[inputs.length - 1].focus();
   });
+  document.getElementById('oe-add-qr').addEventListener('click', () => {
+    oe.qrTokens.push(randomToken());
+    renderOeQrList();
+  });
   el.querySelectorAll('[data-tg]').forEach(i => i.addEventListener('input', () => { oe.tg[i.dataset.tg] = i.value.trim(); }));
   document.getElementById('oe-tg-enabled').addEventListener('change', e => { oe.tg.enabled = e.target.checked; });
   const fb = document.getElementById('oe-tg-fallback');
@@ -3323,6 +3354,36 @@ function renderOutletEditor(){
   renderOePdfPicker();
   renderOeMap();
   renderOeZones();
+  renderOeQrList();
+}
+
+function renderOeQrList(){
+  const oe = outletEditor;
+  const list = document.getElementById('oe-qr-list');
+  if(!list) return;
+  if(!oe.qrTokens.length){
+    list.innerHTML = '<div class="oe-note">' +
+      (oe.id ? 'No QR code yet — add one above.' : 'A QR code is generated automatically when you save. Add more here afterwards.') +
+      '</div>';
+    return;
+  }
+  list.innerHTML = oe.qrTokens.map((t, i) => {
+    const link = outletQrLink(t);
+    return '<div class="outlet-meta" style="margin-bottom:4px;">QR ' + (i + 1) + ': <a href="' + escapeHtml(link) + '" target="_blank" rel="noopener">link</a> · ' +
+      '<button type="button" class="link-btn" data-oe-copy-qr="' + i + '">Copy</button> · ' +
+      '<button type="button" class="link-btn" data-oe-remove-qr="' + i + '" style="color:var(--urgent);">Remove</button>' +
+    '</div>';
+  }).join('');
+  list.querySelectorAll('[data-oe-copy-qr]').forEach(b => b.addEventListener('click', async () => {
+    const link = outletQrLink(oe.qrTokens[Number(b.dataset.oeCopyQr)]);
+    try{ await navigator.clipboard.writeText(link); b.textContent = 'Copied'; }
+    catch(e){ prompt('Copy this QR link:', link); }
+  }));
+  list.querySelectorAll('[data-oe-remove-qr]').forEach(b => b.addEventListener('click', () => {
+    if(!confirm('Remove this QR code? Anything already printed with it will stop working.')) return;
+    oe.qrTokens.splice(Number(b.dataset.oeRemoveQr), 1);
+    renderOeQrList();
+  }));
 }
 
 function setOeHint(html, isWarn){
@@ -3788,7 +3849,14 @@ async function saveOutlet(){
     // An outlet using its built-in map, with nothing drawn here, keeps
     // map_config empty so the built-in map stays in charge.
     if(!keepBuiltIn) body.map_config = map_config;
-    if(!oe.id) body.qr_token = randomToken();
+    // A brand-new outlet always gets its first QR code here (qrTokens is
+    // only ever pre-filled by openOutletEditor() for an existing row).
+    // qr_token stays mirrored to the first entry in qr_tokens so a
+    // database that hasn't run the multi-QR migration yet still gets a
+    // working single QR code.
+    if(!oe.id && !oe.qrTokens.length) oe.qrTokens.push(randomToken());
+    body.qr_tokens = oe.qrTokens;
+    body.qr_token = oe.qrTokens[0] || null;
 
     const res = await fetch(SUPABASE_URL + '/rest/v1/outlets' + (oe.id ? '?outlet_id=eq.' + encodeURIComponent(oe.id) : ''), {
       method: oe.id ? 'PATCH' : 'POST',
@@ -3803,7 +3871,10 @@ async function saveOutlet(){
     const data = await res.json().catch(() => null);
     if(!res.ok || !Array.isArray(data) || !data.length){
       const text = JSON.stringify(data || {});
-      if(/map_config|telegram_enabled|column/i.test(text)){
+      if(/qr_tokens|column/i.test(text) && !/map_config|telegram_enabled/i.test(text)){
+        throw new Error('The database isn\'t set up for multiple QR codes yet — run supabase/outlet_multi_qr_setup.sql in Supabase → SQL Editor, then try again.');
+      }
+      if(/map_config|telegram_enabled/i.test(text)){
         throw new Error('The database isn\'t set up for this yet — run supabase/outlet_admin_setup.sql in Supabase → SQL Editor, then try again.');
       }
       throw new Error((data && data.message) ||
@@ -3827,8 +3898,12 @@ async function saveOutlet(){
       applySubmissionLocations();
     }
     const done = document.getElementById('outlet-admin-msg');
+    const savedTokens = outletQrTokens(saved);
     done.innerHTML = 'Saved <strong>' + escapeHtml(saved.outlet_name) + '</strong>.' +
-      (saved.qr_token ? ' QR link: <a href="' + escapeHtml(outletQrLink(saved.qr_token)) + '" target="_blank" rel="noopener">' + escapeHtml(outletQrLink(saved.qr_token)) + '</a>' : '');
+      (savedTokens.length ? ' QR link' + (savedTokens.length > 1 ? 's' : '') + ': ' + savedTokens.map(t => {
+        const link = outletQrLink(t);
+        return '<a href="' + escapeHtml(link) + '" target="_blank" rel="noopener">' + escapeHtml(link) + '</a>';
+      }).join(', ') : '');
     done.className = 'msg ok';
   } catch(e){
     fail(e.message);
