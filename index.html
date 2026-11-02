@@ -207,6 +207,7 @@
   .comment-text{font-size:14px;color:var(--ink);white-space:pre-wrap;}
   .quick-comment-btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;color:var(--ink-soft);font-family:'Source Sans 3',sans-serif;margin:0 6px 6px 0;}
   .quick-comment-btn:hover{background:var(--line);}
+  .quick-comment-btn.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
   .history-outlet-heading{font-family:'Oswald',sans-serif;font-size:18px;text-transform:uppercase;letter-spacing:0.03em;
     border-bottom:2px solid var(--rust);padding-bottom:8px;margin:28px 0 14px;}
   .history-outlet-heading:first-child{margin-top:0;}
@@ -566,7 +567,7 @@
             <div class="check-row">
               <label><input type="checkbox" id="acct-perm-general" /> General maintenance</label>
               <label><input type="checkbox" id="acct-perm-admin" /> Admin</label>
-              <label><input type="checkbox" id="acct-perm-viewer" /> Viewer (cannot claim tasks)</label>
+              <label><input type="checkbox" id="acct-perm-viewer" /> Viewer (cannot start tasks)</label>
             </div>
             <button class="primary" id="acct-submit">Create account</button>
             <div class="msg" id="acct-msg"></div>
@@ -1027,7 +1028,7 @@ function showSubmitReceipt(msg, requestId, isUrgent){
       '<div style="font-size:13px;">What happens next:</div>' +
       '<ol>' +
         '<li>The maintenance team has been notified on Telegram' + (isUrgent ? ' and will treat this as a priority' : '') + '.</li>' +
-        '<li>A staff member will claim it and post updates as work progresses.</li>' +
+        '<li>A staff member will start work on it and post updates as work progresses.</li>' +
         '<li>Quote ' + escapeHtml(ticketRef(requestId)) + ' if you need to follow up.</li>' +
       '</ol>' +
     '</div>';
@@ -1696,7 +1697,7 @@ function renderMyTasks(){
     .slice().sort((a, b) => URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency]);
   list.innerHTML = mine.length
     ? ''
-    : '<div class="empty">You have no unresolved tasks claimed right now.</div>';
+    : '<div class="empty">You have no unresolved tasks started right now.</div>';
   mine.forEach(r => list.appendChild(renderTicket(r)));
 }
 
@@ -1760,18 +1761,25 @@ function renderTicket(r, mode){
   } else {
     el.className = 'ticket ' + r.urgency;
   }
-  // A request flagged "needs new equipment" can only be claimed by a user
+  // A request flagged "needs new equipment" can only be started by a user
   // with the 'purchaser' permission, and a 'viewer' permission blocks
-  // claiming entirely regardless of anything else the account holds —
+  // starting entirely regardless of anything else the account holds —
   // viewer is meant as a hard read-only override, not just another
   // optional permission. Admins bypass both restrictions. Both are
-  // client-side guards only — see the note by claimRequest() about
+  // client-side guards only — see the note by startRequest() about
   // backing them with a server-side check too.
   const isViewerOnly = currentPermissions.includes('viewer') && !currentIsAdmin;
   const needsPurchaser = !!r.requires_new_equipment;
   const canClaim = !isViewerOnly && (!needsPurchaser || currentPermissions.includes('purchaser') || currentIsAdmin);
+  // Starting a task records how it'll be handled, not just who's on it —
+  // picking either button both claims the task and sets that record in
+  // one step. There is no third, unselected, "started but unspecified"
+  // state: a task simply isn't started until one of these is picked.
   const claimBtn = (r.status === 'pending' && canClaim)
-    ? '<button class="secondary" data-claim="' + r.request_id + '">Claim</button>'
+    ? '<span class="start-controls">' +
+        '<button class="secondary" data-start="' + r.request_id + '" data-start-type="in_house">In house maintenance</button>' +
+        '<button class="secondary" data-start="' + r.request_id + '" data-start-type="contractor">By contractor</button>' +
+      '</span>'
     : (r.status === 'pending' && isViewerOnly ? '<span class="claimed-label">View only</span>' :
        (r.status === 'pending' && needsPurchaser ? '<span class="claimed-label">Purchaser only</span>' : ''));
   const isClaimant = !!(session && session.user && r.assigned_to === session.user.id);
@@ -1804,8 +1812,7 @@ function renderTicket(r, mode){
       resolutionImage(r) +
       '<div class="ticket-foot"><span>' + new Date(r.submitted_at).toLocaleString() + '</span>' + claimBtn + resolveBtn + '</div>' +
     '</div>';
-  const btn = el.querySelector('[data-claim]');
-  if(btn) btn.addEventListener('click', () => claimRequest(r.request_id));
+  el.querySelectorAll('[data-start]').forEach(b => b.addEventListener('click', () => startRequest(b.dataset.start, b.dataset.startType)));
   const rbtn = el.querySelector('[data-resolve]');
   const photoInput = el.querySelector('[data-resolve-photo]');
   const photoTrigger = el.querySelector('[data-photo-trigger]');
@@ -1916,13 +1923,21 @@ function ticketImage(r){
   return photoGallery(urls, 'Attached');
 }
 
+function maintenanceTypeLabel(r){
+  if(r.maintenance_type === 'in_house') return 'In house' + (r.maintenance_pic ? ' — ' + r.maintenance_pic : '');
+  if(r.maintenance_type === 'contractor') return 'By contractor';
+  return '';
+}
+
 function claimedLabel(r){
   if(!r.assigned_to || !r.claimed_at) return '';
   const name = (r.profiles && r.profiles.full_name) ? r.profiles.full_name.split(' ')[0] : 'Staff';
   const when = new Date(r.claimed_at).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
   });
-  return '<div class="claimed-label">Claimed by ' + escapeHtml(name) + ' @ ' + when + '</div>';
+  const mt = maintenanceTypeLabel(r);
+  return '<div class="claimed-label">Started by ' + escapeHtml(name) + ' @ ' + when +
+    (mt ? ' &middot; ' + escapeHtml(mt) : '') + '</div>';
 }
 
 function resolvedLabel(r){
@@ -1956,13 +1971,9 @@ function openTicketDetail(request_id){
   document.querySelectorAll('[data-quick-comment]').forEach(btn => {
     btn.addEventListener('click', () => submitComment(r.request_id, btn.dataset.quickComment));
   });
-  const etaSubmitBtn = document.getElementById('eta-date-submit');
-  if(etaSubmitBtn){
-    etaSubmitBtn.addEventListener('click', () => {
-      const dateInput = document.getElementById('eta-date-input');
-      setEtaDate(r.request_id, dateInput.value);
-    });
-  }
+  document.querySelectorAll('[data-set-pic]').forEach(btn => {
+    btn.addEventListener('click', () => setMaintenancePic(r.request_id, btn.dataset.setPic));
+  });
   const submitBtn = document.getElementById('comment-submit');
   if(submitBtn){
     submitBtn.addEventListener('click', () => {
@@ -1977,19 +1988,15 @@ function openTicketDetail(request_id){
   loadAndRenderComments(r.request_id);
 }
 
-// Sets an actual eta_date on the request — from a specific calendar date
-// the claimant picks, not just a preset day-count — so "Due in X days" /
-// "Overdue" badges can be computed from it everywhere the ticket shows
-// up. Still posts a human-readable comment too, so the log reads clearly.
-async function setEtaDate(request_id, dateStr){
-  if(!dateStr){
-    alert('Pick a date first.');
-    return;
-  }
+// Sets (or changes) which of the three named staff is handling an
+// in-house-maintenance task. Same claimant-only gate as the rest of the
+// "Report progress" panel. Posts a comment too, so the assignment shows
+// up in the log the same way other progress updates do.
+async function setMaintenancePic(request_id, pic){
   const ticket = allStaffRequests.find(x => x.request_id === request_id) ||
                  (adminAllRequests || []).find(x => x.request_id === request_id);
   if(!ticket || !session || !session.user || ticket.assigned_to !== session.user.id){
-    alert('Only the staff member who claimed this task can set an ETA.');
+    alert('Only the staff member who started this task can assign a PIC.');
     return;
   }
 
@@ -2005,28 +2012,25 @@ async function setEtaDate(request_id, dateStr){
           'Content-Type': 'application/json',
           Prefer: 'return=representation'
         },
-        body: JSON.stringify({ eta_date: dateStr })
+        body: JSON.stringify({ maintenance_pic: pic })
       }
     );
   } catch(e){
-    alert('Could not set ETA — check your connection and try again.');
+    alert('Could not assign PIC — check your connection and try again.');
     return;
   }
 
   if(!res.ok){
-    alert('Could not set ETA.');
+    alert('Could not assign PIC.');
     return;
   }
   const updated = await res.json().catch(() => []);
   if(!updated.length){
-    alert('Only the staff member who claimed this task can set an ETA.');
+    alert('Only the staff member who started this task can assign a PIC.');
     return;
   }
 
-  const formatted = new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-  });
-  await submitComment(request_id, 'Will be completed by ' + formatted);
+  await submitComment(request_id, 'Assigned maintenance PIC: ' + pic);
   await loadAllRequests();
   renderQueue();
   openTicketDetail(request_id);
@@ -2165,7 +2169,7 @@ async function submitComment(request_id, text){
     // a non-claimant from posting; this alert covers the rare case where
     // that's what rejected it (e.g. a stale panel left open after someone
     // else claimed the ticket in another tab).
-    alert('Could not add comment. Only the staff member who claimed this task can post updates on it.');
+    alert('Could not add comment. Only the staff member who started this task can post updates on it.');
   }
 }
 
@@ -2176,11 +2180,12 @@ function renderTicketDetail(r, historyMode){
     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
   }) : '';
 
+  const startedMt = maintenanceTypeLabel(r);
   const timelineItems = [
     { done: true, title: 'Submitted', meta: fullDate(r.submitted_at) },
     r.assigned_to && r.claimed_at
-      ? { done: true, title: 'Claimed by ' + claimantName, meta: fullDate(r.claimed_at) }
-      : { done: false, title: 'Not yet claimed', meta: '' },
+      ? { done: true, title: 'Started by ' + claimantName + (startedMt ? ' (' + startedMt + ')' : ''), meta: fullDate(r.claimed_at) }
+      : { done: false, title: 'Not yet started', meta: '' },
     r.status === 'resolved' && r.resolved_at
       ? { done: true, title: 'Resolved by ' + claimantName, meta: fullDate(r.resolved_at) }
       : { done: false, title: 'Not yet resolved', meta: '' }
@@ -2206,22 +2211,24 @@ function renderTicketDetail(r, historyMode){
   quickActions.push('Contractor contacted'); // shown on every ticket
   if(r.request_type === 'defect') quickActions.push('Maintenance team contacted');
 
-  // Today's date as YYYY-MM-DD, used as the date input's minimum — stops
-  // anyone from accidentally picking a date already in the past.
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const existingEta = r.eta_date ? '<div class="claimed-label" style="margin-bottom:6px;">Currently set to: ' + escapeHtml(r.eta_date) + '</div>' : '';
+  // Only shown once the task has been started as in-house maintenance —
+  // "In house maintenance" alone doesn't say which technician is on it,
+  // so this picks one of the three named staff. Settable (and
+  // re-settable) by the claimant, same gate as the rest of this panel.
+  const PIC_OPTIONS = ['Firdzuan', 'Zenn', 'Isyrak'];
+  const picHtml = (isClaimant && r.maintenance_type === 'in_house') ? (
+    '<div class="detail-section-label">Assigned maintenance PIC</div>' +
+    '<div>' + PIC_OPTIONS.map(name =>
+      '<button class="quick-comment-btn' + (r.maintenance_pic === name ? ' active' : '') + '" data-set-pic="' + escapeHtml(name) + '">' + escapeHtml(name) + '</button>'
+    ).join('') + '</div>'
+  ) : '';
 
   const actionAreaHtml = isClaimant ? (
     '<div class="detail-section-label">Report progress</div>' +
     '<div>' + quickActions.map(label =>
       '<button class="quick-comment-btn" data-quick-comment="' + escapeHtml(label) + '">' + escapeHtml(label) + '</button>'
     ).join('') + '</div>' +
-    '<div class="detail-section-label">Will be completed by</div>' +
-    existingEta +
-    '<div>' +
-      '<input type="date" id="eta-date-input" min="' + todayStr + '" style="padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-family:inherit;" />' +
-      '<button class="quick-comment-btn" id="eta-date-submit" style="margin-left:8px;">Set date</button>' +
-    '</div>' +
+    picHtml +
     '<textarea id="comment-input" placeholder="Add an update, visible to everyone…" style="margin-top:8px;"></textarea>' +
     '<button class="primary" id="comment-submit" style="margin-top:8px;">Post comment</button>'
   ) : '';
@@ -2315,39 +2322,62 @@ async function renderServiceHistory(){
   });
 }
 
-async function claimRequest(request_id){
-  // Client-side guards: 'viewer' blocks claiming entirely (a hard
+// Starting a task is a centralized-facilitator action: any staff account
+// (other than a pure 'viewer') can start — and so claim — any pending
+// task, same as before. Picking "In house maintenance" or "By
+// contractor" both records how it's being handled and claims it as the
+// current (facilitator) account in one step — there's no separate claim
+// step any more. Guarded by status=eq.pending in the PATCH itself so two
+// people starting the same task at once can't both succeed (whoever's
+// PATCH lands second simply matches zero rows).
+async function startRequest(request_id, maintenanceType){
+  if(maintenanceType !== 'in_house' && maintenanceType !== 'contractor') return;
+  // Client-side guards: 'viewer' blocks starting entirely (a hard
   // read-only override, checked first), and a request needing new
-  // equipment can only be claimed by a purchaser (or an admin). Like
+  // equipment can only be started by a purchaser (or an admin). Like
   // resolveRequest()'s claimant check, these are enforced here for UX but
-  // aren't a substitute for a server-side check inside the
-  // claim_request() Postgres function itself.
+  // aren't a substitute for a server-side RLS check too.
   if(currentPermissions.includes('viewer') && !currentIsAdmin){
-    alert('Viewer accounts cannot claim tasks.');
+    alert('Viewer accounts cannot start tasks.');
     return;
   }
   const ticket = allStaffRequests.find(r => r.request_id === request_id);
   if(ticket && ticket.requires_new_equipment && !currentPermissions.includes('purchaser') && !currentIsAdmin){
-    alert('Only a user with the purchaser permission can claim this request.');
+    alert('Only a user with the purchaser permission can start this request.');
     return;
   }
   let res;
   try{
-    res = await fetch(SUPABASE_URL + '/rest/v1/rpc/claim_request', {
-      method: 'POST',
-      headers: { apikey: PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_request_id: request_id, p_user_id: session.user.id })
+    res = await fetch(SUPABASE_URL + '/rest/v1/requests?request_id=eq.' + request_id + '&status=eq.pending', {
+      method: 'PATCH',
+      headers: {
+        apikey: PUBLISHABLE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify({
+        status: 'in_progress',
+        assigned_to: session.user.id,
+        claimed_at: new Date().toISOString(),
+        maintenance_type: maintenanceType,
+        maintenance_pic: null
+      })
     });
   } catch(e){
-    alert('Could not claim — check your connection and try again.');
+    alert('Could not start — check your connection and try again.');
     return;
   }
   if(res.ok){
+    const updated = await res.json().catch(() => []);
+    if(!updated.length){
+      alert('This task was already started by someone else.');
+    }
     await loadAllRequests();
     renderQueue();
   } else {
     const err = await res.json().catch(() => ({}));
-    alert('Could not claim: ' + (err.message || res.statusText));
+    alert('Could not start: ' + (err.message || res.statusText));
   }
 }
 
@@ -3151,7 +3181,7 @@ const PERM_OPTIONS = [
   { key: 'improvement', label: 'Improvement' },
   { key: 'purchaser', label: 'Purchaser' },
   { key: 'general_maintenance', label: 'General maintenance' },
-  { key: 'viewer', label: 'Viewer (cannot claim)' }
+  { key: 'viewer', label: 'Viewer (cannot start tasks)' }
 ];
 
 async function loadPermissionManageList(){
