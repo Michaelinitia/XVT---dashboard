@@ -3226,34 +3226,37 @@ async function loadPermissionManageList(){
     if(deleteBtn){
       deleteBtn.addEventListener('click', async () => {
         const statusEl = row.querySelector('.msg');
-        // This removes the profile row only — their permissions, and their
-        // ability to claim or be assigned tasks, disappear immediately, and
-        // they drop off this list and the Team tab. It does NOT delete
-        // their login itself: that lives in Supabase Auth and requires the
-        // admin API (the secret service_role key), which must never be
-        // embedded in this public client file. To fully remove someone's
-        // ability to log in, delete their user from Supabase's
-        // Authentication → Users list directly.
+        // Fully removes the account — both the profiles row and the
+        // Supabase Auth login itself — via the admin-delete-account Edge
+        // Function (supabase/functions/admin-delete-account), so this
+        // never needs a trip into the Supabase dashboard. That function
+        // holds the one thing the browser never can (the service_role
+        // key); this call only ever carries the admin's own session token.
         const confirmed = confirm(
-          'Delete ' + (p.full_name || 'this user') + '\'s profile?\n\n' +
-          'This removes their permissions and access immediately. Their login ' +
-          'itself will still exist in Supabase Auth — to fully remove them, ' +
-          'also delete their user there.'
+          'Permanently delete ' + (p.full_name || 'this user') + '\'s account?\n\n' +
+          'This removes their login and all their permissions immediately — ' +
+          'they will no longer be able to sign in at all. This cannot be undone.'
         );
         if(!confirmed) return;
-        const delRes = await fetch(SUPABASE_URL + '/rest/v1/profiles?user_id=eq.' + p.user_id, {
-          method: 'DELETE',
+        statusEl.textContent = 'Deleting…';
+        statusEl.className = 'msg';
+        const delRes = await fetch(SUPABASE_URL + '/functions/v1/admin-delete-account', {
+          method: 'POST',
           headers: {
             apikey: PUBLISHABLE_KEY,
             Authorization: 'Bearer ' + session.access_token,
-            Prefer: 'return=minimal'
-          }
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ user_id: p.user_id })
         }).catch(() => null);
         if(!delRes){
           statusEl.textContent = 'Could not delete — check your connection and try again.';
           statusEl.className = 'msg err';
         } else if(delRes.ok){
           row.remove();
+        } else if(delRes.status === 404){
+          statusEl.textContent = 'Could not delete: the admin-delete-account function isn\'t deployed yet — see supabase/functions/admin-delete-account/DEPLOY.md.';
+          statusEl.className = 'msg err';
         } else {
           const err = await delRes.json().catch(() => ({}));
           statusEl.textContent = 'Could not delete: ' + (err.message || delRes.statusText);
