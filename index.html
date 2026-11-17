@@ -870,7 +870,7 @@ async function resolveOutlet(){
   if(urlOutlet){
     outletId = urlOutlet;
   } else if(urlQr){
-    const data = await fetchOutletRows(qrTokenLookupFilter(urlQr), false);
+    const data = await resolveOutletByQrToken(urlQr);
     if(data && data[0]) outletId = data[0].outlet_id;
   }
 
@@ -3359,6 +3359,27 @@ function outletQrTokens(o){
 
 function qrTokenLookupFilter(token){
   return 'or=' + encodeURIComponent('(qr_token.eq.' + token + ',qr_tokens.cs.{' + token + '})');
+}
+
+// Resolving a scanned QR code can never be allowed to silently fail: the
+// combined filter above needs the qr_tokens column (from
+// outlet_multi_qr_setup.sql) to exist, and on a database where that
+// migration hasn't been run yet, PostgREST 400s on the whole query —
+// fetchOutletRows() only varies the select list on retry, not the
+// filter, so that 400 would otherwise come back as "no outlet found"
+// every time, for every outlet, not just ones with a second QR code.
+// Falling back to the plain, always-valid qr_token column keeps
+// pre-migration databases working exactly as before.
+async function resolveOutletByQrToken(token){
+  const headers = { apikey: PUBLISHABLE_KEY };
+  const base = SUPABASE_URL + '/rest/v1/outlets?';
+  let res = await fetch(base + qrTokenLookupFilter(token) + '&select=outlet_id,outlet_name&order=outlet_name.asc', { headers }).catch(() => null);
+  if(!res || !res.ok){
+    res = await fetch(base + 'qr_token=eq.' + encodeURIComponent(token) + '&select=outlet_id,outlet_name&order=outlet_name.asc', { headers }).catch(() => null);
+  }
+  const rows = (res && res.ok) ? await res.json().catch(() => []) : [];
+  rememberOutlets(rows);
+  return rows;
 }
 
 function outletHasTelegramGroups(o){
